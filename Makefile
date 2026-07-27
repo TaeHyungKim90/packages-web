@@ -1,6 +1,6 @@
 .PHONY: help install install-backend install-frontend \
 	backend frontend dev build preview env clean \
-	lint lint-backend lint-frontend \
+	lint lint-backend lint-frontend type-check \
 	test test-backend test-frontend check
 
 BACKEND_DIR := backend
@@ -23,6 +23,7 @@ help:
 	@echo "  make lint             Lint backend + frontend"
 	@echo "  make lint-backend     ruff check"
 	@echo "  make lint-frontend    eslint + tsc"
+	@echo "  make type-check       TypeScript check (frontend)"
 	@echo "  make test             Test backend + frontend"
 	@echo "  make test-backend     pytest"
 	@echo "  make test-frontend    vitest"
@@ -61,6 +62,9 @@ lint-backend:
 
 lint-frontend:
 	cd $(FRONTEND_DIR) && npm run lint
+
+type-check:
+	cd $(FRONTEND_DIR) && npx tsc --noEmit -p tsconfig.json
 
 test: test-backend test-frontend
 
