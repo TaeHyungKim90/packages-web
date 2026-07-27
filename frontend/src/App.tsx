@@ -8,6 +8,7 @@ import Layout from "./components/Layout";
 import { useAppHealth } from "./hooks/useAppHealth";
 import { useAuth } from "./hooks/useAuth";
 import LoginPage from "./pages/LoginPage";
+import PackageRequestPage from "./pages/PackageRequestPage";
 import PackageSearchPage from "./pages/PackageSearchPage";
 
 export default function App() {
@@ -25,6 +26,9 @@ export default function App() {
 
         <Route element={<RequireAuth auth={auth} />}>
           <Route path="/search" element={<PackageSearchPage />} />
+          <Route path="/request/pypi" element={<PackageRequestPage packageType="pypi" />} />
+          <Route path="/request/npm" element={<PackageRequestPage packageType="npm" />} />
+          <Route path="/request/nuget" element={<PackageRequestPage packageType="nuget" />} />
         </Route>
       </Routes>
     </Layout>

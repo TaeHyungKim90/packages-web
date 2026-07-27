@@ -1,5 +1,5 @@
 from app.config import settings
-from app.routers import auth, packages
+from app.routers import auth, package_request, packages
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -15,6 +15,7 @@ app.add_middleware(
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(packages.router, prefix="/api")
+app.include_router(package_request.router, prefix="/api")
 
 
 @app.get("/health")

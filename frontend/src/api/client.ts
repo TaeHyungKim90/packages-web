@@ -1,4 +1,11 @@
-import type { AuthUser, CheckParams, PackageCheckResponse } from "../types";
+import type {
+  AuthUser,
+  CheckParams,
+  PackageCheckResponse,
+  PackageRequestResult,
+  PackageRequestStatus,
+  PackageRequestValidation,
+} from "../types";
 
 /** Empty = same-origin via Vite proxy (required for session cookie). */
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
@@ -45,6 +52,71 @@ export async function checkPackage(params: CheckParams): Promise<PackageCheckRes
   }
 
   const res = await apiFetch(`/api/packages/check?${search}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const detail = body.detail ?? res.statusText;
+    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+  }
+  return res.json();
+}
+
+export async function validatePypiPackage(params: {
+  packages: { name: string; version: string }[];
+}): Promise<PackageRequestValidation> {
+  const res = await apiFetch("/api/request/pypi/validate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      packages: params.packages.map((p) => ({
+        name: p.name.trim(),
+        version: p.version.trim(),
+      })),
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const detail = body.detail ?? res.statusText;
+    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+  }
+  return res.json();
+}
+
+export async function fetchPypiRequestStatus(
+  prNumber: number,
+  packages: { name: string; version: string }[] = [],
+): Promise<PackageRequestStatus> {
+  const search = new URLSearchParams();
+  if (packages.length > 0) {
+    search.set(
+      "packages",
+      packages.map((p) => `${p.name.trim()}==${p.version.trim()}`).join(","),
+    );
+  }
+  const qs = search.toString();
+  const res = await apiFetch(
+    `/api/request/pypi/${prNumber}${qs ? `?${qs}` : ""}`,
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const detail = body.detail ?? res.statusText;
+    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+  }
+  return res.json();
+}
+
+export async function requestPypiPackage(params: {
+  packages: { name: string; version: string }[];
+}): Promise<PackageRequestResult> {
+  const res = await apiFetch("/api/request/pypi", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      packages: params.packages.map((p) => ({
+        name: p.name.trim(),
+        version: p.version.trim(),
+      })),
+    }),
+  });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     const detail = body.detail ?? res.statusText;
