@@ -79,14 +79,16 @@ export default function SearchForm({
           </div>
         </div>
 
-        <p className="search-form__hint">
-          이름·버전 모두 일부만 입력해도 검색됩니다 (예: uv → uvicorn, 13 → 17.13.9).
-        </p>
+        <div className="search-form__footer">
+          <p className="search-form__hint">
+            이름·버전 모두 일부만 입력해도 검색됩니다 (예: uv → uvicorn, 13 → 17.13.9).
+          </p>
 
-        <div className="search-form__actions">
-          <button type="submit" className="btn-primary" disabled={!canSubmit}>
-            {loading ? "검색 중…" : "검색"}
-          </button>
+          <div className="search-form__actions">
+            <button type="submit" className="btn-primary" disabled={!canSubmit}>
+              {loading ? "검색 중…" : "검색"}
+            </button>
+          </div>
         </div>
       </form>
     </div>

@@ -350,6 +350,7 @@ button:disabled {
 }
 
 .request-form__actions {
+  justify-content: flex-end;
   gap: 0.75rem;
 }
 
@@ -442,6 +443,12 @@ button:disabled {
   background: var(--success-bg);
   color: var(--success);
   border-color: var(--success-border);
+}
+
+.request-alert--warn {
+  background: var(--warning-bg, #fff8e1);
+  color: var(--warning, #b8860b);
+  border-color: var(--warning-border, #ffe082);
 }
 
 .request-validation-block__title {
@@ -565,6 +572,13 @@ button:disabled {
   font-size: 0.8rem;
   color: var(--text-subtle);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.request-result__status {
+  margin: 0.85rem 0 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-muted);
 }
 
 .request-result__note {
@@ -718,10 +732,17 @@ button:disabled {
   margin: 0;
 }
 
+.search-form__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-top: 0.25rem;
+}
+
 .search-form__actions {
   display: flex;
-  justify-content: flex-end;
-  padding-top: 0.25rem;
+  flex-shrink: 0;
 }
 
 .btn-primary {

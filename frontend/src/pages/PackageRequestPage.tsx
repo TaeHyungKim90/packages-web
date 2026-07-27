@@ -14,7 +14,7 @@ import type {
 
 const STORAGE_KEY = "packages-web:pypi-request";
 const MAX_PACKAGES = 10;
-const POLL_INTERVAL_MS = 30_000;
+const POLL_INTERVAL_MS = 10_000;
 const POLL_MAX_MS = 15 * 60_000;
 
 const LABEL_MAP: Record<PackageType, string> = {
@@ -93,7 +93,7 @@ function normalizeResult(raw: unknown): PackageRequestResult | null {
     automerge: Boolean(r.automerge),
     automerge_detail: r.automerge_detail ?? "",
     requested_by: r.requested_by ?? "",
-    delivery: r.delivery,
+    delivery: r.delivery ?? "pending",
   };
 }
 
@@ -158,12 +158,8 @@ export default function PackageRequestPage({ packageType }: Props) {
 function PypiRequestForm() {
   const formId = useId();
   const stored = loadStored();
-  const [rows, setRows] = useState<RequestRow[]>(
-    stored?.rows?.length ? stored.rows : [newRow()],
-  );
-  const [validation, setValidation] = useState<PackageRequestValidation | null>(
-    stored?.validation ?? null,
-  );
+  const [rows, setRows] = useState<RequestRow[]>([newRow()]);
+  const [validation, setValidation] = useState<PackageRequestValidation | null>(null);
   const [result, setResult] = useState<PackageRequestResult | null>(
     stored?.result ?? null,
   );
@@ -223,8 +219,8 @@ function PypiRequestForm() {
   }, [result?.pr_number]);
 
   useEffect(() => {
-    saveStored({ rows, validation, result });
-  }, [rows, validation, result]);
+    saveStored({ rows: [], validation: null, result });
+  }, [result]);
 
   const updateRow = (id: string, patch: Partial<Pick<RequestRow, "name" | "version">>) => {
     setRows((prev) => prev.map((row) => (row.id === id ? { ...row, ...patch } : row)));
@@ -246,11 +242,14 @@ function PypiRequestForm() {
 
   const filled = rows.every((r) => r.name.trim() && r.version.trim());
   const canValidate = filled && !validating && !submitting;
+  const hasPendingRequest =
+    !!result && result.delivery !== "done";
   const canSubmit =
     validation?.can_request === true &&
     rowsMatchValidation(rows, validation) &&
     !submitting &&
-    !validating;
+    !validating &&
+    !hasPendingRequest;
 
   const onValidate = async () => {
     if (!canValidate) return;
@@ -279,7 +278,9 @@ function PypiRequestForm() {
       const data = await requestPypiPackage({
         packages: rows.map((r) => ({ name: r.name, version: r.version })),
       });
-      setResult(data);
+      setResult({ ...data, delivery: data.delivery ?? "pending" });
+      setRows([newRow()]);
+      setValidation(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -298,9 +299,14 @@ function PypiRequestForm() {
     <div className="card">
       <h2 className="card__title">PyPI 패키지 신청</h2>
       <p className="request-page__hint">
-        신청 전 <strong>검증</strong>으로 업스트림 버전 존재·Hosted·inventory·요청 목록을
-        확인합니다. <strong>+</strong>로 여러 패키지를 한 PR에 신청할 수 있습니다
+        <strong>+</strong> 버튼으로 여러 패키지를 한 번에 신청할 수 있습니다
         (최대 {MAX_PACKAGES}개).
+        <br />
+        반드시 <strong>검증</strong> 후 <strong>신청</strong>해 주세요.
+        이름과 버전을 정확히 입력해야 하며, 이전 신청이 완료될 때까지 추가 신청은 불가합니다.
+        <br />
+        {MAX_PACKAGES}개를 넘는 다량의 패키지는 담당자에게 패키지 목록을 메일로 보내 주세요.
+        검토 후 대신 등록해 드립니다.
       </p>
 
       <form className="search-form" onSubmit={(e) => void onSubmit(e)}>
@@ -377,9 +383,14 @@ function PypiRequestForm() {
             {validating ? "검증 중…" : "검증"}
           </button>
           <button type="submit" className="btn-primary" disabled={!canSubmit}>
-            {submitting ? "신청 중…" : "신청 (PR 생성)"}
+            {submitting ? "신청 중…" : "신청"}
           </button>
         </div>
+        {hasPendingRequest && validation?.can_request && (
+          <p className="request-alert request-alert--warn" role="status">
+            이전 신청이 진행 중입니다. 완료된 후 새 신청이 가능합니다.
+          </p>
+        )}
       </form>
 
       {validation?.items && validation.items.length > 0 && (
@@ -429,23 +440,9 @@ function PypiRequestForm() {
           <p className="result__meta">
             <strong>
               {result.packages.map((p) => `${p.name}==${p.version}`).join(", ")}
-            </strong>{" "}
-            · {result.repository} · @{result.requested_by}
+            </strong>
+            {result.requested_by ? ` · @${result.requested_by}` : ""}
           </p>
-          <p className="request-result__pr">
-            <a href={result.pr_url} target="_blank" rel="noreferrer">
-              PR #{result.pr_number}
-            </a>
-            <span className="request-result__state">
-              {result.merged ? "merged" : result.pr_state}
-              {result.automerge
-                ? ` · automerge 요청됨${result.automerge_detail ? ` (${result.automerge_detail})` : ""}`
-                : result.automerge_detail
-                  ? ` · automerge 실패: ${result.automerge_detail}`
-                  : ""}
-            </span>
-          </p>
-          <p className="request-result__branch">branch: {result.branch}</p>
           {result.delivery === "done" ? (
             <div className="request-alert request-alert--success" role="status">
               Hosted에 등록되었습니다. 패키지 검색에서 확인할 수 있습니다.
@@ -453,10 +450,12 @@ function PypiRequestForm() {
           ) : result.delivery === "delivering" ||
             result.delivery === "merged" ||
             result.merged ? (
-            <p className="request-result__note">Hosted 등록 확인 중…</p>
+            <p className="request-result__status" role="status">
+              패키지 받는중…
+            </p>
           ) : (
-            <p className="request-result__note">
-              새로고침해도 이 브라우저에 최근 신청이 남습니다. CI 통과 후 병합됩니다.
+            <p className="request-result__status" role="status">
+              패키지 검사중…
             </p>
           )}
         </div>
