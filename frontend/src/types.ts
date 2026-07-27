@@ -1,21 +1,29 @@
-export interface Package {
+export interface PackageMatch {
   name: string;
-  version: string;
+  versions: string[];
+}
+
+export interface PackageCheckResponse {
+  exists: boolean;
+  query: string;
   format: string;
   repository: string;
-}
-
-export interface TransferRequest {
-  name: string;
-  version: string;
-  package_type: string;
-}
-
-export interface TransferResult {
-  pr_url: string | null;
-  pr_number: number | null;
-  state: string;
-  message: string;
+  packages: PackageMatch[];
+  matched_version: string | null;
+  continuation_token: string | null;
 }
 
 export type PackageType = "pypi" | "npm" | "nuget";
+
+export interface CheckParams {
+  format: PackageType;
+  name: string;
+  version?: string;
+  continuationToken?: string;
+}
+
+export interface AuthUser {
+  login: string;
+  name: string | null;
+  avatar_url: string | null;
+}

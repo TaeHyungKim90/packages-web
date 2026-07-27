@@ -1,18 +1,24 @@
 # packages-web
 
-Nexus Proxy 저장소의 패키지를 조회하고, 기존 `CICD/*Packages` 저장소의 GitOps 파이프라인을 통해 Hosted 저장소로 이관하는 웹 도구입니다.
+Nexus **Hosted** 저장소에 패키지가 등록되어 있는지 확인하는 웹 도구입니다.
+
+## 기능
+
+- 포맷(pypi / npm / nuget) 선택 후 패키지 **이름**으로 Hosted 존재 여부 확인
+- **버전**(선택) 지정 시 해당 버전의 정확 일치 여부 확인
+- 이름 없이 버전만 입력하는 검색은 지원하지 않음
 
 ## 구조
 
 ```text
-/backend   — FastAPI (Nexus 조회 + GitOps 이관 오케스트레이션)
-/frontend  — React + Vite + TypeScript (패키지 목록 UI)
+/backend   — FastAPI (Nexus Search API)
+/frontend  — React + Vite + TypeScript
 ```
 
 ## 사전 요구사항
 
 - [uv](https://docs.astral.sh/uv/) (Python 3.12+)
-- Node.js 24+
+- Node.js 20+
 
 ## 실행
 
@@ -24,8 +30,6 @@ uv sync
 uv run uvicorn main:app --reload --port 8000
 ```
 
-헬스체크: `GET http://localhost:8000/health` → `{"status":"ok"}`
-
 ### Frontend
 
 ```bash
@@ -36,6 +40,28 @@ npm run dev
 
 브라우저: `http://localhost:5173`
 
+## API
+
+### Hosted 존재 확인
+
+```text
+GET /api/packages/check?format=pypi&name=requests
+GET /api/packages/check?format=pypi&name=requests&version=2.32.3
+```
+
+응답 예시:
+
+```json
+{
+  "exists": true,
+  "name": "requests",
+  "format": "pypi",
+  "repository": "pypi-hosted",
+  "versions": ["2.32.3", "2.31.0"],
+  "matched_version": null
+}
+```
+
 ## 환경변수
 
 루트 `.env.example`을 `.env`로 복사한 뒤 값을 채웁니다.
@@ -44,23 +70,13 @@ npm run dev
 | ---- | ---- |
 | `NEXUS_BASE_URL` | Nexus 서버 URL |
 | `NEXUS_USERNAME` / `NEXUS_PASSWORD` | Nexus 인증 |
-| `GITHUB_API_BASE` | Enterprise GitHub API base (기본: `https://github.sk-inc.com/api/v3`) |
-| `GITHUB_TOKEN` | GitHub PAT (contents:write, pull_requests:write) |
-| `GITHUB_ORG` | 대상 org (기본: `CICD`) |
-| `TRANSFER_AUTO_MERGE` | PR 생성 후 auto-merge 활성화 여부 |
+| `NEXUS_VERIFY_SSL` | TLS 인증서 검증 여부 |
+| `CORS_ORIGINS` | 허용할 프론트 오리진 (쉼표 구분) |
 
 ## 구현 단계
 
 | 단계 | 내용 | 상태 |
 | ---- | ---- | ---- |
 | 1 | 뼈대 생성 | 완료 |
-| 2 | Nexus 패키지 검색 | 예정 |
-| 3 | pypi 이관 (GitOps) | 예정 |
-| 4 | npm 이관 | 예정 |
-| 5 | nuget 이관 | 예정 |
-
-## 이관 흐름 (3단계 이후)
-
-1. UI에서 Proxy 패키지 선택 → [Hosted로 이관]
-2. 백엔드가 대상 repo의 `requests/<eco>_requests_list.yaml`에 패키지 추가 PR 생성
-3. CI 통과 후 auto-merge → 기존 `cd.yml` 실행 → Proxy에서 다운로드 → Hosted 업로드
+| 2 | Hosted 패키지 존재 확인 + UI | 완료 |
+| 3~5 | 이관 등 추가 기능 | 추후 계획 |

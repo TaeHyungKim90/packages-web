@@ -13,14 +13,22 @@ class PackageListResponse(BaseModel):
     continuation_token: str | None = None
 
 
-class TransferRequest(BaseModel):
+class PackageMatch(BaseModel):
     name: str
-    version: str
-    package_type: str = Field(description="pypi | npm | nuget")
+    versions: list[str] = Field(default_factory=list)
 
 
-class TransferResult(BaseModel):
-    pr_url: str | None = None
-    pr_number: int | None = None
-    state: str = "pending"
-    message: str = ""
+class PackageCheckResponse(BaseModel):
+    exists: bool
+    query: str
+    format: str
+    repository: str
+    packages: list[PackageMatch] = Field(default_factory=list)
+    matched_version: str | None = None
+    continuation_token: str | None = None
+
+
+class UserResponse(BaseModel):
+    login: str
+    name: str | None = None
+    avatar_url: str | None = None

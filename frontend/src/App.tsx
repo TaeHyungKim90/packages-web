@@ -1,28 +1,32 @@
-import { useEffect, useState } from "react";
-import { checkHealth } from "./api/client";
+import { Route, Routes } from "react-router-dom";
+import {
+  RedirectIfAuthed,
+  RequireAuth,
+  RootRedirect,
+} from "./components/AuthGate";
+import Layout from "./components/Layout";
+import { useAppHealth } from "./hooks/useAppHealth";
+import { useAuth } from "./hooks/useAuth";
+import LoginPage from "./pages/LoginPage";
+import PackageSearchPage from "./pages/PackageSearchPage";
 
 export default function App() {
-  const [health, setHealth] = useState<string>("checking…");
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    checkHealth()
-      .then((data) => setHealth(data.status))
-      .catch((err: Error) => setError(err.message));
-  }, []);
+  const health = useAppHealth();
+  const auth = useAuth();
 
   return (
-    <div style={{ fontFamily: "system-ui, sans-serif", padding: "2rem" }}>
-      <h1>packages-web</h1>
-      <p>Nexus Proxy → Hosted 패키지 이관 도구</p>
-      <p>
-        Backend:{" "}
-        {error ? (
-          <span style={{ color: "crimson" }}>{error}</span>
-        ) : (
-          <span style={{ color: "green" }}>{health}</span>
-        )}
-      </p>
-    </div>
+    <Layout health={health} auth={auth}>
+      <Routes>
+        <Route path="/" element={<RootRedirect auth={auth} />} />
+
+        <Route element={<RedirectIfAuthed auth={auth} />}>
+          <Route path="/login" element={<LoginPage />} />
+        </Route>
+
+        <Route element={<RequireAuth auth={auth} />}>
+          <Route path="/search" element={<PackageSearchPage />} />
+        </Route>
+      </Routes>
+    </Layout>
   );
 }
