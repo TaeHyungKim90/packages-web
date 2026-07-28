@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink, useLocation } from "react-router";
+import { NavLink, useLocation, useNavigate } from "react-router";
 
 const REQUEST_ITEMS = [
   { type: "pypi", label: "pypi", to: "/request/pypi" },
@@ -9,6 +9,7 @@ const REQUEST_ITEMS = [
 
 export default function Header() {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const requestActive = pathname.startsWith("/request");
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -40,7 +41,10 @@ export default function Header() {
             className={`header-nav__link header-nav__link--parent${requestActive ? " header-nav__link--active" : ""}`}
             aria-expanded={menuOpen}
             aria-haspopup="true"
-            onClick={() => setMenuOpen((open) => !open)}
+            onClick={() => {
+              navigate("/request/pypi");
+              setMenuOpen(false);
+            }}
           >
             패키지신청
           </button>
