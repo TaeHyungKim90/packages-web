@@ -1,3 +1,5 @@
+import httpx
+import pytest
 from app.services.nexus import (
     _display_name,
     _map_item,
@@ -6,8 +8,6 @@ from app.services.nexus import (
     simple_index_has_version,
     upstream_version_exists,
 )
-import httpx
-import pytest
 
 
 def test_normalize_pypi_name():

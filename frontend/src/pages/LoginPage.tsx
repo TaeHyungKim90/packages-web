@@ -1,4 +1,4 @@
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 import { getLoginUrl } from "../api/client";
 
 export default function LoginPage() {
