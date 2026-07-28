@@ -95,15 +95,15 @@ async def _fake_validate(*, eco, name, version):
         },
         {
             "key": "hosted",
-            "label": "Hosted 미등록",
+            "label": "Hosted에 이미 등록됨",
             "passed": True,
-            "detail": "pypi-hosted에 없습니다.",
+            "detail": "pypi-hosted에 없음",
         },
         {
             "key": "inventory",
-            "label": "Inventory 미등록",
+            "label": "Inventory에 이미 등록됨",
             "passed": True,
-            "detail": "inventory에 없습니다.",
+            "detail": "inventory에 없음",
         },
         {
             "key": "requests",
@@ -153,15 +153,15 @@ def test_validate_pypi_blocked(monkeypatch):
             },
             {
                 "key": "hosted",
-                "label": "Hosted 미등록",
+                "label": "Hosted에 이미 등록됨",
                 "passed": True,
-                "detail": "pypi-hosted에 없습니다.",
+                "detail": "pypi-hosted에 없음",
             },
             {
                 "key": "inventory",
-                "label": "Inventory 미등록",
+                "label": "Inventory에 이미 등록됨",
                 "passed": True,
-                "detail": "inventory에 없습니다.",
+                "detail": "inventory에 없음",
             },
             {
                 "key": "requests",
@@ -290,3 +290,257 @@ def test_status_delivery_done(monkeypatch):
     assert data["delivery"] == "done"
     assert len(data["packages"]) == 2
     assert all(p["in_hosted"] for p in data["packages"])
+
+
+# ── npm ────────────────────────────────────────────────
+
+
+async def _fake_submit_npm(*, eco, packages, requested_by):
+    first = packages[0]
+    pr = PullRequest(
+        number=99,
+        html_url="https://github.sk-inc.com/CICD/npmPackages/pull/99",
+        state="open",
+        merged=False,
+        title=f"request: {first[0]}=={first[1]}",
+        node_id="PR_99",
+    )
+    return pr, "request/20260101-web-lodash", True, "MERGE"
+
+
+async def _fake_validate_npm(*, eco, name, version):
+    return [
+        {
+            "key": "upstream",
+            "label": "업스트림 버전 존재",
+            "passed": True,
+            "detail": f"npm에 {name}=={version} 확인됨.",
+        },
+        {
+            "key": "hosted",
+            "label": "Hosted에 이미 등록됨",
+            "passed": True,
+            "detail": "npm-hosted에 없음",
+        },
+        {
+            "key": "inventory",
+            "label": "Inventory에 이미 등록됨",
+            "passed": True,
+            "detail": "inventory에 없음",
+        },
+        {
+            "key": "requests",
+            "label": "요청 목록 중복 없음",
+            "passed": True,
+            "detail": "요청 목록에 없습니다.",
+        },
+    ]
+
+
+def test_request_npm_success(monkeypatch):
+    monkeypatch.setattr(settings, "github_token", "dummy-token")
+    monkeypatch.setattr(
+        "app.routers.package_request.gitops.submit_package_request", _fake_submit_npm
+    )
+    c = _authed()
+    response = c.post(
+        "/api/request/npm",
+        json={"packages": [{"name": "lodash", "version": "4.17.21"}]},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ecosystem"] == "npm"
+    assert data["pr_number"] == 99
+    assert data["packages"][0]["name"] == "lodash"
+    assert "npmPackages" in data["repository"]
+
+
+def test_request_npm_scoped(monkeypatch):
+    monkeypatch.setattr(settings, "github_token", "dummy-token")
+    monkeypatch.setattr(
+        "app.routers.package_request.gitops.submit_package_request", _fake_submit_npm
+    )
+    c = _authed()
+    response = c.post(
+        "/api/request/npm",
+        json={"packages": [{"name": "@scope/pkg", "version": "1.2.3"}]},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ecosystem"] == "npm"
+    assert data["packages"][0]["name"] == "@scope/pkg"
+    assert data["packages"][0]["version"] == "1.2.3"
+
+
+def test_validate_npm_success(monkeypatch):
+    monkeypatch.setattr(settings, "github_token", "dummy-token")
+    monkeypatch.setattr(
+        "app.routers.package_request.gitops.validate_package_request",
+        _fake_validate_npm,
+    )
+    c = _authed()
+    response = c.post(
+        "/api/request/npm/validate",
+        json={"packages": [{"name": "@scope/pkg", "version": "1.2.3"}]},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["can_request"] is True
+    assert data["items"][0]["name"] == "@scope/pkg"
+    assert len(data["items"][0]["checks"]) == 5
+
+
+def test_validate_npm_blocked(monkeypatch):
+    async def _blocked(*, eco, name, version):
+        return [
+            {
+                "key": "upstream",
+                "label": "업스트림 버전 존재",
+                "passed": False,
+                "detail": f"npm에 {name}=={version}이(가) 없습니다.",
+            },
+            {
+                "key": "hosted",
+                "label": "Hosted에 이미 등록됨",
+                "passed": True,
+                "detail": "npm-hosted에 없음",
+            },
+            {
+                "key": "inventory",
+                "label": "Inventory에 이미 등록됨",
+                "passed": True,
+                "detail": "inventory에 없음",
+            },
+            {
+                "key": "requests",
+                "label": "요청 목록 중복 없음",
+                "passed": True,
+                "detail": "요청 목록에 없습니다.",
+            },
+        ]
+
+    monkeypatch.setattr(settings, "github_token", "dummy-token")
+    monkeypatch.setattr(
+        "app.routers.package_request.gitops.validate_package_request",
+        _blocked,
+    )
+    c = _authed()
+    response = c.post(
+        "/api/request/npm/validate",
+        json={"packages": [{"name": "lodash", "version": "9.9.9"}]},
+    )
+    assert response.status_code == 200
+    assert response.json()["can_request"] is False
+
+
+def test_npm_status_delivery_pending(monkeypatch):
+    async def _merge_if_ready(owner, repo, number):
+        assert repo == "npmPackages"
+        return PullRequest(
+            number=number,
+            html_url=f"https://github.sk-inc.com/CICD/npmPackages/pull/{number}",
+            state="open",
+            merged=False,
+            title="request: lodash==4.17.21",
+            node_id="PR_1",
+        )
+
+    async def _raw(owner, repo, number):
+        return {"mergeable_state": "blocked"}
+
+    monkeypatch.setattr(settings, "github_token", "dummy-token")
+    monkeypatch.setattr(
+        "app.routers.package_request.github.merge_if_ready", _merge_if_ready
+    )
+    monkeypatch.setattr("app.routers.package_request.github.get_pull_raw", _raw)
+    c = _authed()
+    response = c.get(
+        "/api/request/npm/7",
+        params={"packages": "lodash==4.17.21"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ecosystem"] == "npm"
+    assert data["delivery"] == "pending"
+
+
+def test_npm_status_delivery_delivering(monkeypatch):
+    async def _merge_if_ready(owner, repo, number):
+        return PullRequest(
+            number=number,
+            html_url=f"https://github.sk-inc.com/CICD/npmPackages/pull/{number}",
+            state="closed",
+            merged=True,
+            title="request: @scope/pkg==1.2.3",
+            node_id="PR_1",
+        )
+
+    async def _raw(owner, repo, number):
+        return {"mergeable_state": "unknown"}
+
+    async def _hosted(eco, name, version):
+        return False
+
+    monkeypatch.setattr(settings, "github_token", "dummy-token")
+    monkeypatch.setattr(
+        "app.routers.package_request.github.merge_if_ready", _merge_if_ready
+    )
+    monkeypatch.setattr("app.routers.package_request.github.get_pull_raw", _raw)
+    monkeypatch.setattr(
+        "app.routers.package_request.gitops.hosted_has_exact", _hosted
+    )
+    c = _authed()
+    response = c.get(
+        "/api/request/npm/7",
+        params={"packages": "@scope/pkg==1.2.3"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["delivery"] == "delivering"
+    assert data["packages"][0]["name"] == "@scope/pkg"
+    assert data["packages"][0]["in_hosted"] is False
+
+
+def test_npm_status_delivery_done(monkeypatch):
+    async def _merge_if_ready(owner, repo, number):
+        return PullRequest(
+            number=number,
+            html_url=f"https://github.sk-inc.com/CICD/npmPackages/pull/{number}",
+            state="closed",
+            merged=True,
+            title="request: lodash==4.17.21",
+            node_id="PR_1",
+        )
+
+    async def _raw(owner, repo, number):
+        return {"mergeable_state": "unknown"}
+
+    async def _hosted(eco, name, version):
+        return True
+
+    monkeypatch.setattr(settings, "github_token", "dummy-token")
+    monkeypatch.setattr(
+        "app.routers.package_request.github.merge_if_ready", _merge_if_ready
+    )
+    monkeypatch.setattr("app.routers.package_request.github.get_pull_raw", _raw)
+    monkeypatch.setattr(
+        "app.routers.package_request.gitops.hosted_has_exact", _hosted
+    )
+    c = _authed()
+    response = c.get(
+        "/api/request/npm/7",
+        params={"packages": "lodash==4.17.21,@scope/pkg==1.2.3"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["delivery"] == "done"
+    assert len(data["packages"]) == 2
+
+
+def test_request_nuget_not_supported():
+    c = _authed()
+    response = c.post(
+        "/api/request/nuget",
+        json={"packages": [{"name": "Newtonsoft.Json", "version": "13.0.1"}]},
+    )
+    assert response.status_code == 404

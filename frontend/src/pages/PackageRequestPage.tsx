@@ -1,21 +1,22 @@
 import { useEffect, useId, useState, type FormEvent } from "react";
 import {
-  fetchPypiRequestStatus,
-  requestPypiPackage,
-  validatePypiPackage,
+  fetchRequestStatus,
+  requestPackage,
+  validatePackageRequest,
 } from "../api/client";
 import type {
   PackageRequestResult,
   PackageRequestValidation,
   PackageType,
   RequestRow,
-  StoredPypiRequest,
+  StoredPackageRequest,
 } from "../types";
 
-const STORAGE_KEY = "packages-web:pypi-request";
 const MAX_PACKAGES = 10;
 const POLL_INTERVAL_MS = 10_000;
 const POLL_MAX_MS = 15 * 60_000;
+
+type RequestEco = Extract<PackageType, "pypi" | "npm">;
 
 const LABEL_MAP: Record<PackageType, string> = {
   pypi: "PyPI",
@@ -23,8 +24,17 @@ const LABEL_MAP: Record<PackageType, string> = {
   nuget: "NuGet",
 };
 
+const PLACEHOLDERS: Record<RequestEco, { name: string; version: string }> = {
+  pypi: { name: "예: requests", version: "예: 2.32.3" },
+  npm: { name: "예: lodash 또는 @scope/pkg", version: "예: 4.17.21" },
+};
+
 interface Props {
   packageType: PackageType;
+}
+
+function storageKey(eco: RequestEco): string {
+  return `packages-web:${eco}-request`;
 }
 
 function newRow(partial?: Partial<RequestRow>): RequestRow {
@@ -68,7 +78,10 @@ function normalizeValidation(raw: unknown): PackageRequestValidation | null {
   return null;
 }
 
-function normalizeResult(raw: unknown): PackageRequestResult | null {
+function normalizeResult(
+  raw: unknown,
+  fallbackEco: RequestEco,
+): PackageRequestResult | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Partial<PackageRequestResult> & {
     name?: string;
@@ -82,7 +95,7 @@ function normalizeResult(raw: unknown): PackageRequestResult | null {
       : null;
   if (!packages?.length) return null;
   return {
-    ecosystem: r.ecosystem ?? "pypi",
+    ecosystem: r.ecosystem ?? fallbackEco,
     packages,
     repository: r.repository ?? "",
     branch: r.branch ?? "",
@@ -97,11 +110,12 @@ function normalizeResult(raw: unknown): PackageRequestResult | null {
   };
 }
 
-function loadStored(): StoredPypiRequest | null {
+function loadStored(eco: RequestEco): StoredPackageRequest | null {
+  const key = storageKey(eco);
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as StoredPypiRequest & {
+    const parsed = JSON.parse(raw) as StoredPackageRequest & {
       name?: string;
       version?: string;
     };
@@ -114,21 +128,28 @@ function loadStored(): StoredPypiRequest | null {
     } else if (parsed.name || parsed.version) {
       rows = [newRow({ name: parsed.name ?? "", version: parsed.version ?? "" })];
     }
-    if (!rows) return null;
+    if (!rows) {
+      // result-only storage (current behavior)
+      return {
+        rows: [newRow()],
+        validation: null,
+        result: normalizeResult(parsed.result, eco),
+      };
+    }
 
     return {
       rows,
       validation: normalizeValidation(parsed.validation),
-      result: normalizeResult(parsed.result),
+      result: normalizeResult(parsed.result, eco),
     };
   } catch {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(key);
     return null;
   }
 }
 
-function saveStored(state: StoredPypiRequest) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+function saveStored(eco: RequestEco, state: StoredPackageRequest) {
+  localStorage.setItem(storageKey(eco), JSON.stringify(state));
 }
 
 function rowsMatchValidation(
@@ -142,8 +163,18 @@ function rowsMatchValidation(
   });
 }
 
+/** Failed checks for display. Hosted + Inventory both fail → Hosted만 표시. */
+function visibleFailedChecks(
+  checks: PackageRequestValidation["items"][number]["checks"],
+) {
+  const failed = (checks ?? []).filter((check) => !check.passed);
+  const hostedFailed = failed.some((c) => c.key === "hosted");
+  if (!hostedFailed) return failed;
+  return failed.filter((c) => c.key !== "inventory");
+}
+
 export default function PackageRequestPage({ packageType }: Props) {
-  if (packageType !== "pypi") {
+  if (packageType !== "pypi" && packageType !== "npm") {
     return (
       <div className="card request-page--coming-soon">
         <h2 className="card__title">{LABEL_MAP[packageType]} 패키지 신청</h2>
@@ -152,12 +183,13 @@ export default function PackageRequestPage({ packageType }: Props) {
     );
   }
 
-  return <PypiRequestForm />;
+  return <PackageRequestForm eco={packageType} />;
 }
 
-function PypiRequestForm() {
+function PackageRequestForm({ eco }: { eco: RequestEco }) {
   const formId = useId();
-  const stored = loadStored();
+  const stored = loadStored(eco);
+  const placeholders = PLACEHOLDERS[eco];
   const [rows, setRows] = useState<RequestRow[]>([newRow()]);
   const [validation, setValidation] = useState<PackageRequestValidation | null>(null);
   const [result, setResult] = useState<PackageRequestResult | null>(
@@ -178,7 +210,7 @@ function PypiRequestForm() {
     const packages = result.packages;
 
     const refresh = () => {
-      fetchPypiRequestStatus(prNumber, packages)
+      fetchRequestStatus(eco, prNumber, packages)
         .then((status) => {
           if (cancelled) return;
           setResult((prev) =>
@@ -216,11 +248,11 @@ function PypiRequestForm() {
     };
     // Poll for this PR until done or unmount; do not restart on each delivery tick.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
-  }, [result?.pr_number]);
+  }, [eco, result?.pr_number]);
 
   useEffect(() => {
-    saveStored({ rows: [], validation: null, result });
-  }, [result]);
+    saveStored(eco, { rows: [], validation: null, result });
+  }, [eco, result]);
 
   const updateRow = (id: string, patch: Partial<Pick<RequestRow, "name" | "version">>) => {
     setRows((prev) => prev.map((row) => (row.id === id ? { ...row, ...patch } : row)));
@@ -242,8 +274,7 @@ function PypiRequestForm() {
 
   const filled = rows.every((r) => r.name.trim() && r.version.trim());
   const canValidate = filled && !validating && !submitting;
-  const hasPendingRequest =
-    !!result && result.delivery !== "done";
+  const hasPendingRequest = !!result && result.delivery !== "done";
   const canSubmit =
     validation?.can_request === true &&
     rowsMatchValidation(rows, validation) &&
@@ -256,7 +287,7 @@ function PypiRequestForm() {
     setValidating(true);
     setError(null);
     try {
-      const data = await validatePypiPackage({
+      const data = await validatePackageRequest(eco, {
         packages: rows.map((r) => ({ name: r.name, version: r.version })),
       });
       setValidation(data);
@@ -275,7 +306,7 @@ function PypiRequestForm() {
     setSubmitting(true);
     setError(null);
     try {
-      const data = await requestPypiPackage({
+      const data = await requestPackage(eco, {
         packages: rows.map((r) => ({ name: r.name, version: r.version })),
       });
       setResult({ ...data, delivery: data.delivery ?? "pending" });
@@ -292,18 +323,24 @@ function PypiRequestForm() {
     setResult(null);
     setValidation(null);
     setError(null);
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(storageKey(eco));
   };
 
   return (
     <div className="card">
-      <h2 className="card__title">PyPI 패키지 신청</h2>
+      <h2 className="card__title">{LABEL_MAP[eco]} 패키지 신청</h2>
       <p className="request-page__hint">
         <strong>+</strong> 버튼으로 여러 패키지를 한 번에 신청할 수 있습니다
         (최대 {MAX_PACKAGES}개).
         <br />
         반드시 <strong>검증</strong> 후 <strong>신청</strong>해 주세요.
         이름과 버전을 정확히 입력해야 하며, 이전 신청이 완료될 때까지 추가 신청은 불가합니다.
+        {eco === "npm" && (
+          <>
+            <br />
+            scoped 패키지는 <code>@scope/name</code> 형식으로 입력하세요.
+          </>
+        )}
         <br />
         {MAX_PACKAGES}개를 넘는 다량의 패키지는 담당자에게 패키지 목록을 메일로 보내 주세요.
         검토 후 대신 등록해 드립니다.
@@ -320,7 +357,7 @@ function PypiRequestForm() {
                   type="text"
                   value={row.name}
                   onChange={(e) => updateRow(row.id, { name: e.target.value })}
-                  placeholder="예: requests"
+                  placeholder={placeholders.name}
                   autoComplete="off"
                   required
                   aria-label={`패키지 이름 ${index + 1}`}
@@ -335,7 +372,7 @@ function PypiRequestForm() {
                   type="text"
                   value={row.version}
                   onChange={(e) => updateRow(row.id, { version: e.target.value })}
-                  placeholder="예: 2.32.3"
+                  placeholder={placeholders.version}
                   autoComplete="off"
                   required
                   aria-label={`버전 ${index + 1}`}
@@ -412,9 +449,7 @@ function PypiRequestForm() {
                     <span className="request-validation-block__badge--fail">실패</span>
                   </h3>
                   <ul className="request-checks">
-                    {(item.checks ?? [])
-                      .filter((check) => !check.passed)
-                      .map((check) => (
+                    {visibleFailedChecks(item.checks).map((check) => (
                         <li key={check.key} className="request-checks__item--fail">
                           <span className="request-checks__label">{check.label}</span>
                           <span className="request-checks__detail">{check.detail}</span>

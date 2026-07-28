@@ -47,9 +47,10 @@ def _inventory_has(raw: str | None, name: str, version: str) -> bool:
     name_l = name.lower()
     for item in packages:
         if isinstance(item, str):
+            # Prefer name@version; use rpartition so scoped npm (@scope/pkg@1.0.0) works.
             if "@" in item:
-                n, _, v = item.partition("@")
-                if n.lower() == name_l and v == version:
+                n, sep, v = item.rpartition("@")
+                if sep and n and v and n.lower() == name_l and v == version:
                     return True
             continue
         if not isinstance(item, dict):
@@ -165,12 +166,12 @@ async def validate_package_request(
     checks.append(
         {
             "key": "hosted",
-            "label": "Hosted 미등록",
+            "label": "Hosted에 이미 등록됨",
             "passed": not in_hosted,
             "detail": (
-                f"{eco.hosted_repo}에 이미 있습니다."
+                f"{eco.hosted_repo}에 등록되어 신청할 수 없습니다."
                 if in_hosted
-                else f"{eco.hosted_repo}에 없습니다."
+                else f"{eco.hosted_repo}에 없음"
             ),
         }
     )
@@ -180,10 +181,12 @@ async def validate_package_request(
     checks.append(
         {
             "key": "inventory",
-            "label": "Inventory 미등록",
+            "label": "Inventory에 이미 등록됨",
             "passed": not in_inventory,
             "detail": (
-                "inventory에 이미 있습니다." if in_inventory else "inventory에 없습니다."
+                "inventory에 등록되어 신청할 수 없습니다."
+                if in_inventory
+                else "inventory에 없음"
             ),
         }
     )

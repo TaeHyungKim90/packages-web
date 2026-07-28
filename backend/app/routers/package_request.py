@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from app.config import settings
 from app.deps import require_user
@@ -23,6 +23,20 @@ router = APIRouter(prefix="/request", tags=["request"])
 
 CurrentUser = Annotated[SessionUser, Depends(require_user)]
 
+SUPPORTED_REQUEST_ECOSYSTEMS = frozenset({"pypi", "npm"})
+EcoPath = Annotated[str, Path(description="Package ecosystem: pypi | npm")]
+
+
+def _require_eco(eco: str) -> str:
+    key = eco.lower().strip()
+    if key not in SUPPORTED_REQUEST_ECOSYSTEMS:
+        allowed = ", ".join(sorted(SUPPORTED_REQUEST_ECOSYSTEMS))
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unsupported ecosystem: {eco}. Use one of: {allowed}",
+        )
+    return key
+
 
 def _normalize_packages(body: PackageRequestBody) -> list[tuple[str, str]]:
     if len(body.packages) > 10:
@@ -38,7 +52,7 @@ def _normalize_packages(body: PackageRequestBody) -> list[tuple[str, str]]:
 
 
 def _parse_packages_query(packages: str | None) -> list[tuple[str, str]]:
-    """Parse packages=name==ver,name2==ver2 (max 10)."""
+    """Parse packages=name==ver,name2==ver2 (max 10). Supports scoped npm names."""
     if not packages or not packages.strip():
         return []
     out: list[tuple[str, str]] = []
@@ -71,14 +85,19 @@ def _delivery_status(*, merged: bool, items: list[PackageRequestDeliveryItem]) -
     return "delivering"
 
 
-@router.post("/pypi/validate", response_model=PackageRequestValidation)
-async def validate_pypi(body: PackageRequestBody, _user: CurrentUser) -> PackageRequestValidation:
+@router.post("/{eco}/validate", response_model=PackageRequestValidation)
+async def validate_request(
+    eco: EcoPath,
+    body: PackageRequestBody,
+    _user: CurrentUser,
+) -> PackageRequestValidation:
+    eco_key = _require_eco(eco)
     packages = _normalize_packages(body)
 
     if not settings.github_token:
         raise HTTPException(status_code=503, detail="GITHUB_TOKEN is not configured")
 
-    eco = settings.get_ecosystem("pypi")
+    eco_cfg = settings.get_ecosystem(eco_key)
     seen: set[tuple[str, str]] = set()
     items: list[PackageRequestItemValidation] = []
 
@@ -86,7 +105,7 @@ async def validate_pypi(body: PackageRequestBody, _user: CurrentUser) -> Package
         key = (name.lower(), version)
         try:
             raw_checks = await gitops.validate_package_request(
-                eco=eco, name=name, version=version
+                eco=eco_cfg, name=name, version=version
             )
         except GitHubError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -126,17 +145,22 @@ async def validate_pypi(body: PackageRequestBody, _user: CurrentUser) -> Package
     )
 
 
-@router.post("/pypi", response_model=PackageRequestResult)
-async def request_pypi(body: PackageRequestBody, user: CurrentUser) -> PackageRequestResult:
+@router.post("/{eco}", response_model=PackageRequestResult)
+async def submit_request(
+    eco: EcoPath,
+    body: PackageRequestBody,
+    user: CurrentUser,
+) -> PackageRequestResult:
+    eco_key = _require_eco(eco)
     packages = _normalize_packages(body)
 
     if not settings.github_token:
         raise HTTPException(status_code=503, detail="GITHUB_TOKEN is not configured")
 
-    eco = settings.get_ecosystem("pypi")
+    eco_cfg = settings.get_ecosystem(eco_key)
     try:
         pr, branch, automerge, automerge_detail = await gitops.submit_package_request(
-            eco=eco,
+            eco=eco_cfg,
             packages=packages,
             requested_by=user.login,
         )
@@ -149,9 +173,9 @@ async def request_pypi(body: PackageRequestBody, user: CurrentUser) -> PackageRe
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return PackageRequestResult(
-        ecosystem="pypi",
+        ecosystem=eco_key,
         packages=[PackageRequestItem(name=n, version=v) for n, v in packages],
-        repository=f"{settings.github_org}/{eco.gitops_repo}",
+        repository=f"{settings.github_org}/{eco_cfg.gitops_repo}",
         branch=branch,
         pr_number=pr.number,
         pr_url=pr.html_url,
@@ -163,21 +187,23 @@ async def request_pypi(body: PackageRequestBody, user: CurrentUser) -> PackageRe
     )
 
 
-@router.get("/pypi/{pr_number}", response_model=PackageRequestStatus)
-async def request_pypi_status(
+@router.get("/{eco}/{pr_number}", response_model=PackageRequestStatus)
+async def request_status(
+    eco: EcoPath,
     pr_number: int,
     _user: CurrentUser,
     packages: Annotated[str | None, Query()] = None,
 ) -> PackageRequestStatus:
+    eco_key = _require_eco(eco)
     if not settings.github_token:
         raise HTTPException(status_code=503, detail="GITHUB_TOKEN is not configured")
 
     pkg_list = _parse_packages_query(packages)
-    eco = settings.get_ecosystem("pypi")
+    eco_cfg = settings.get_ecosystem(eco_key)
     try:
         # If CI is already green, attempt merge (does not force-merge blocked PRs).
-        pr = await github.merge_if_ready(settings.github_org, eco.gitops_repo, pr_number)
-        raw = await github.get_pull_raw(settings.github_org, eco.gitops_repo, pr_number)
+        pr = await github.merge_if_ready(settings.github_org, eco_cfg.gitops_repo, pr_number)
+        raw = await github.get_pull_raw(settings.github_org, eco_cfg.gitops_repo, pr_number)
     except GitHubError as exc:
         status = exc.status_code or 502
         if status == 404:
@@ -187,7 +213,7 @@ async def request_pypi_status(
     delivery_items: list[PackageRequestDeliveryItem] = []
     if pr.merged and pkg_list:
         for name, version in pkg_list:
-            in_hosted = await gitops.hosted_has_exact(eco, name, version)
+            in_hosted = await gitops.hosted_has_exact(eco_cfg, name, version)
             delivery_items.append(
                 PackageRequestDeliveryItem(
                     name=name, version=version, in_hosted=in_hosted
@@ -200,7 +226,7 @@ async def request_pypi_status(
         ]
 
     return PackageRequestStatus(
-        ecosystem="pypi",
+        ecosystem=eco_key,
         pr_number=pr.number,
         pr_url=pr.html_url,
         pr_state=pr.state,

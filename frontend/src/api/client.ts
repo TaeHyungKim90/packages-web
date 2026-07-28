@@ -5,10 +5,13 @@ import type {
   PackageRequestResult,
   PackageRequestStatus,
   PackageRequestValidation,
+  PackageType,
 } from "../types";
 
 /** Empty = same-origin via Vite proxy (required for session cookie). */
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+
+type RequestEco = Extract<PackageType, "pypi" | "npm">;
 
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   return fetch(`${API_BASE}${path}`, {
@@ -60,33 +63,55 @@ export async function checkPackage(params: CheckParams): Promise<PackageCheckRes
   return res.json();
 }
 
-export async function validatePypiPackage(params: {
-  packages: { name: string; version: string }[];
-}): Promise<PackageRequestValidation> {
-  const res = await apiFetch("/api/request/pypi/validate", {
+function packagesPayload(packages: { name: string; version: string }[]) {
+  return {
+    packages: packages.map((p) => ({
+      name: p.name.trim(),
+      version: p.version.trim(),
+    })),
+  };
+}
+
+async function readError(res: Response): Promise<string> {
+  const body = await res.json().catch(() => ({}));
+  const detail = body.detail ?? res.statusText;
+  return typeof detail === "string" ? detail : JSON.stringify(detail);
+}
+
+export async function validatePackageRequest(
+  eco: RequestEco,
+  params: { packages: { name: string; version: string }[] },
+): Promise<PackageRequestValidation> {
+  const res = await apiFetch(`/api/request/${eco}/validate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      packages: params.packages.map((p) => ({
-        name: p.name.trim(),
-        version: p.version.trim(),
-      })),
-    }),
+    body: JSON.stringify(packagesPayload(params.packages)),
   });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    const detail = body.detail ?? res.statusText;
-    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
-  }
+  if (!res.ok) throw new Error(await readError(res));
   return res.json();
 }
 
-export async function fetchPypiRequestStatus(
+export async function requestPackage(
+  eco: RequestEco,
+  params: { packages: { name: string; version: string }[] },
+): Promise<PackageRequestResult> {
+  const res = await apiFetch(`/api/request/${eco}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(packagesPayload(params.packages)),
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+export async function fetchRequestStatus(
+  eco: RequestEco,
   prNumber: number,
   packages: { name: string; version: string }[] = [],
 ): Promise<PackageRequestStatus> {
   const search = new URLSearchParams();
   if (packages.length > 0) {
+    // encodeURIComponent via URLSearchParams — needed for scoped npm (@scope/pkg)
     search.set(
       "packages",
       packages.map((p) => `${p.name.trim()}==${p.version.trim()}`).join(","),
@@ -94,33 +119,30 @@ export async function fetchPypiRequestStatus(
   }
   const qs = search.toString();
   const res = await apiFetch(
-    `/api/request/pypi/${prNumber}${qs ? `?${qs}` : ""}`,
+    `/api/request/${eco}/${prNumber}${qs ? `?${qs}` : ""}`,
   );
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    const detail = body.detail ?? res.statusText;
-    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
-  }
+  if (!res.ok) throw new Error(await readError(res));
   return res.json();
 }
 
+/** @deprecated Prefer validatePackageRequest("pypi", …) */
+export async function validatePypiPackage(params: {
+  packages: { name: string; version: string }[];
+}): Promise<PackageRequestValidation> {
+  return validatePackageRequest("pypi", params);
+}
+
+/** @deprecated Prefer fetchRequestStatus("pypi", …) */
+export async function fetchPypiRequestStatus(
+  prNumber: number,
+  packages: { name: string; version: string }[] = [],
+): Promise<PackageRequestStatus> {
+  return fetchRequestStatus("pypi", prNumber, packages);
+}
+
+/** @deprecated Prefer requestPackage("pypi", …) */
 export async function requestPypiPackage(params: {
   packages: { name: string; version: string }[];
 }): Promise<PackageRequestResult> {
-  const res = await apiFetch("/api/request/pypi", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      packages: params.packages.map((p) => ({
-        name: p.name.trim(),
-        version: p.version.trim(),
-      })),
-    }),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    const detail = body.detail ?? res.statusText;
-    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
-  }
-  return res.json();
+  return requestPackage("pypi", params);
 }

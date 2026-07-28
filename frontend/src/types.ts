@@ -93,8 +93,12 @@ export interface RequestRow {
   version: string;
 }
 
-export interface StoredPypiRequest {
+export interface StoredPackageRequest {
   rows: RequestRow[];
   validation: PackageRequestValidation | null;
   result: PackageRequestResult | null;
 }
+
+/** @deprecated Use StoredPackageRequest */
+export type StoredPypiRequest = StoredPackageRequest;
+
