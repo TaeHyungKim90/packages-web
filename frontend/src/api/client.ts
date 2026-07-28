@@ -11,7 +11,7 @@ import type {
 /** Empty = same-origin via Vite proxy (required for session cookie). */
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
-type RequestEco = Extract<PackageType, "pypi" | "npm">;
+type RequestEco = PackageType;
 
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   return fetch(`${API_BASE}${path}`, {

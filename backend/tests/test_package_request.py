@@ -537,10 +537,150 @@ def test_npm_status_delivery_done(monkeypatch):
     assert len(data["packages"]) == 2
 
 
-def test_request_nuget_not_supported():
+# ── nuget ──────────────────────────────────────────────
+
+
+async def _fake_submit_nuget(*, eco, packages, requested_by):
+    first = packages[0]
+    pr = PullRequest(
+        number=77,
+        html_url="https://github.sk-inc.com/CICD/nugetPackages/pull/77",
+        state="open",
+        merged=False,
+        title=f"request: {first[0]}=={first[1]}",
+        node_id="PR_77",
+    )
+    return pr, "request/20260101-web-newtonsoft-json", True, "MERGE"
+
+
+async def _fake_validate_nuget(*, eco, name, version):
+    return [
+        {
+            "key": "upstream",
+            "label": "업스트림 버전 존재",
+            "passed": True,
+            "detail": f"NuGet에 {name}=={version} 확인됨.",
+        },
+        {
+            "key": "hosted",
+            "label": "Hosted에 이미 등록됨",
+            "passed": True,
+            "detail": "nuget-hosted에 없음",
+        },
+        {
+            "key": "inventory",
+            "label": "Inventory에 이미 등록됨",
+            "passed": True,
+            "detail": "inventory에 없음",
+        },
+        {
+            "key": "requests",
+            "label": "요청 목록 중복 없음",
+            "passed": True,
+            "detail": "요청 목록에 없습니다.",
+        },
+    ]
+
+
+def test_request_nuget_success(monkeypatch):
+    monkeypatch.setattr(settings, "github_token", "dummy-token")
+    monkeypatch.setattr(
+        "app.routers.package_request.gitops.submit_package_request",
+        _fake_submit_nuget,
+    )
     c = _authed()
     response = c.post(
         "/api/request/nuget",
-        json={"packages": [{"name": "Newtonsoft.Json", "version": "13.0.1"}]},
+        json={"packages": [{"name": "Newtonsoft.Json", "version": "13.0.3"}]},
     )
-    assert response.status_code == 404
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ecosystem"] == "nuget"
+    assert data["pr_number"] == 77
+    assert data["packages"][0]["name"] == "Newtonsoft.Json"
+    assert "nugetPackages" in data["repository"]
+
+
+def test_validate_nuget_success(monkeypatch):
+    monkeypatch.setattr(settings, "github_token", "dummy-token")
+    monkeypatch.setattr(
+        "app.routers.package_request.gitops.validate_package_request",
+        _fake_validate_nuget,
+    )
+    c = _authed()
+    response = c.post(
+        "/api/request/nuget/validate",
+        json={"packages": [{"name": "Newtonsoft.Json", "version": "13.0.3"}]},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["can_request"] is True
+    assert data["items"][0]["name"] == "Newtonsoft.Json"
+    assert len(data["items"][0]["checks"]) == 5
+
+
+def test_nuget_status_delivery_pending(monkeypatch):
+    async def _merge_if_ready(owner, repo, number):
+        assert repo == "nugetPackages"
+        return PullRequest(
+            number=number,
+            html_url=f"https://github.sk-inc.com/CICD/nugetPackages/pull/{number}",
+            state="open",
+            merged=False,
+            title="request: Newtonsoft.Json==13.0.3",
+            node_id="PR_1",
+        )
+
+    async def _raw(owner, repo, number):
+        return {"mergeable_state": "blocked"}
+
+    monkeypatch.setattr(settings, "github_token", "dummy-token")
+    monkeypatch.setattr(
+        "app.routers.package_request.github.merge_if_ready", _merge_if_ready
+    )
+    monkeypatch.setattr("app.routers.package_request.github.get_pull_raw", _raw)
+    c = _authed()
+    response = c.get(
+        "/api/request/nuget/7",
+        params={"packages": "Newtonsoft.Json==13.0.3"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ecosystem"] == "nuget"
+    assert data["delivery"] == "pending"
+
+
+def test_nuget_status_delivery_done(monkeypatch):
+    async def _merge_if_ready(owner, repo, number):
+        return PullRequest(
+            number=number,
+            html_url=f"https://github.sk-inc.com/CICD/nugetPackages/pull/{number}",
+            state="closed",
+            merged=True,
+            title="request: Newtonsoft.Json==13.0.3",
+            node_id="PR_1",
+        )
+
+    async def _raw(owner, repo, number):
+        return {"mergeable_state": "unknown"}
+
+    async def _hosted(eco, name, version):
+        return True
+
+    monkeypatch.setattr(settings, "github_token", "dummy-token")
+    monkeypatch.setattr(
+        "app.routers.package_request.github.merge_if_ready", _merge_if_ready
+    )
+    monkeypatch.setattr("app.routers.package_request.github.get_pull_raw", _raw)
+    monkeypatch.setattr(
+        "app.routers.package_request.gitops.hosted_has_exact", _hosted
+    )
+    c = _authed()
+    response = c.get(
+        "/api/request/nuget/7",
+        params={"packages": "Newtonsoft.Json==13.0.3"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["delivery"] == "done"
+    assert data["packages"][0]["in_hosted"] is True

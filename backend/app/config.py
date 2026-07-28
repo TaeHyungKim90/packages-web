@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     # Public registry bases for "does this version exist?" (not Nexus proxy cache)
     pypi_json_base_url: str = "https://pypi.org"
     npm_registry_base_url: str = "https://registry.npmjs.org"
+    nuget_gallery_base_url: str = "https://api.nuget.org"
 
     cors_origins: Annotated[list[str], NoDecode] = Field(
         default=["http://localhost:5173", "http://127.0.0.1:5173"]

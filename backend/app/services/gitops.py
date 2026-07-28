@@ -139,7 +139,9 @@ async def validate_package_request(
             name=name,
             version=version,
         )
-        source = "PyPI" if eco.ecosystem == "pypi" else eco.ecosystem
+        source = {"pypi": "PyPI", "npm": "npm", "nuget": "NuGet"}.get(
+            eco.ecosystem, eco.ecosystem
+        )
         checks.append(
             {
                 "key": "upstream",

@@ -23,8 +23,8 @@ router = APIRouter(prefix="/request", tags=["request"])
 
 CurrentUser = Annotated[SessionUser, Depends(require_user)]
 
-SUPPORTED_REQUEST_ECOSYSTEMS = frozenset({"pypi", "npm"})
-EcoPath = Annotated[str, Path(description="Package ecosystem: pypi | npm")]
+SUPPORTED_REQUEST_ECOSYSTEMS = frozenset({"pypi", "npm", "nuget"})
+EcoPath = Annotated[str, Path(description="Package ecosystem: pypi | npm | nuget")]
 
 
 def _require_eco(eco: str) -> str:

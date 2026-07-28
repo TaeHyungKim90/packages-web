@@ -16,7 +16,7 @@ const MAX_PACKAGES = 10;
 const POLL_INTERVAL_MS = 10_000;
 const POLL_MAX_MS = 15 * 60_000;
 
-type RequestEco = Extract<PackageType, "pypi" | "npm">;
+type RequestEco = PackageType;
 
 const LABEL_MAP: Record<PackageType, string> = {
   pypi: "PyPI",
@@ -27,6 +27,7 @@ const LABEL_MAP: Record<PackageType, string> = {
 const PLACEHOLDERS: Record<RequestEco, { name: string; version: string }> = {
   pypi: { name: "예: requests", version: "예: 2.32.3" },
   npm: { name: "예: lodash 또는 @scope/pkg", version: "예: 4.17.21" },
+  nuget: { name: "예: Newtonsoft.Json", version: "예: 13.0.3" },
 };
 
 interface Props {
@@ -80,7 +81,7 @@ function normalizeValidation(raw: unknown): PackageRequestValidation | null {
 
 function normalizeResult(
   raw: unknown,
-  fallbackEco: RequestEco,
+  expectedEco: RequestEco,
 ): PackageRequestResult | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Partial<PackageRequestResult> & {
@@ -88,6 +89,9 @@ function normalizeResult(
     version?: string;
   };
   if (!r.pr_number || !r.pr_url) return null;
+  const ecosystem = (r.ecosystem ?? expectedEco).toLowerCase();
+  // Only keep results that belong to this request page's ecosystem.
+  if (ecosystem !== expectedEco) return null;
   const packages = Array.isArray(r.packages)
     ? r.packages
     : r.name && r.version
@@ -95,7 +99,7 @@ function normalizeResult(
       : null;
   if (!packages?.length) return null;
   return {
-    ecosystem: r.ecosystem ?? fallbackEco,
+    ecosystem: expectedEco,
     packages,
     repository: r.repository ?? "",
     branch: r.branch ?? "",
@@ -120,6 +124,15 @@ function loadStored(eco: RequestEco): StoredPackageRequest | null {
       version?: string;
     };
 
+    const result = normalizeResult(parsed.result, eco);
+    // Drop mismatched/legacy result from this eco's storage.
+    if (parsed.result && !result) {
+      localStorage.setItem(
+        key,
+        JSON.stringify({ rows: [], validation: null, result: null }),
+      );
+    }
+
     let rows: RequestRow[] | null = null;
     if (Array.isArray(parsed.rows) && parsed.rows.length > 0) {
       rows = parsed.rows
@@ -129,18 +142,17 @@ function loadStored(eco: RequestEco): StoredPackageRequest | null {
       rows = [newRow({ name: parsed.name ?? "", version: parsed.version ?? "" })];
     }
     if (!rows) {
-      // result-only storage (current behavior)
       return {
         rows: [newRow()],
         validation: null,
-        result: normalizeResult(parsed.result, eco),
+        result,
       };
     }
 
     return {
       rows,
       validation: normalizeValidation(parsed.validation),
-      result: normalizeResult(parsed.result, eco),
+      result,
     };
   } catch {
     localStorage.removeItem(key);
@@ -174,16 +186,7 @@ function visibleFailedChecks(
 }
 
 export default function PackageRequestPage({ packageType }: Props) {
-  if (packageType !== "pypi" && packageType !== "npm") {
-    return (
-      <div className="card request-page--coming-soon">
-        <h2 className="card__title">{LABEL_MAP[packageType]} 패키지 신청</h2>
-        <p className="request-page__coming-soon">준비중</p>
-      </div>
-    );
-  }
-
-  return <PackageRequestForm eco={packageType} />;
+  return <PackageRequestForm key={packageType} eco={packageType} />;
 }
 
 function PackageRequestForm({ eco }: { eco: RequestEco }) {
@@ -201,6 +204,7 @@ function PackageRequestForm({ eco }: { eco: RequestEco }) {
 
   useEffect(() => {
     if (!result?.pr_number || !result.packages?.length) return;
+    if (result.ecosystem.toLowerCase() !== eco) return;
     if (result.delivery === "done") return;
 
     let cancelled = false;
@@ -214,7 +218,7 @@ function PackageRequestForm({ eco }: { eco: RequestEco }) {
         .then((status) => {
           if (cancelled) return;
           setResult((prev) =>
-            prev
+            prev && prev.ecosystem.toLowerCase() === eco
               ? {
                   ...prev,
                   pr_state: status.pr_state,
@@ -251,7 +255,9 @@ function PackageRequestForm({ eco }: { eco: RequestEco }) {
   }, [eco, result?.pr_number]);
 
   useEffect(() => {
-    saveStored(eco, { rows: [], validation: null, result });
+    const toStore =
+      result && result.ecosystem.toLowerCase() === eco ? result : null;
+    saveStored(eco, { rows: [], validation: null, result: toStore });
   }, [eco, result]);
 
   const updateRow = (id: string, patch: Partial<Pick<RequestRow, "name" | "version">>) => {
@@ -274,7 +280,9 @@ function PackageRequestForm({ eco }: { eco: RequestEco }) {
 
   const filled = rows.every((r) => r.name.trim() && r.version.trim());
   const canValidate = filled && !validating && !submitting;
-  const hasPendingRequest = !!result && result.delivery !== "done";
+  const ecoResult =
+    result && result.ecosystem.toLowerCase() === eco ? result : null;
+  const hasPendingRequest = !!ecoResult && ecoResult.delivery !== "done";
   const canSubmit =
     validation?.can_request === true &&
     rowsMatchValidation(rows, validation) &&
@@ -334,7 +342,9 @@ function PackageRequestForm({ eco }: { eco: RequestEco }) {
         (최대 {MAX_PACKAGES}개).
         <br />
         반드시 <strong>검증</strong> 후 <strong>신청</strong>해 주세요.
-        이름과 버전을 정확히 입력해야 하며, 이전 신청이 완료될 때까지 추가 신청은 불가합니다.
+        이름과 버전을 정확히 입력해야 하며, 같은 종류({LABEL_MAP[eco]}) 신청이
+        진행 중이면 추가 신청은 불가합니다. PyPI·npm·NuGet은 서로 따로 신청할 수
+        있습니다.
         {eco === "npm" && (
           <>
             <br />
@@ -425,7 +435,8 @@ function PackageRequestForm({ eco }: { eco: RequestEco }) {
         </div>
         {hasPendingRequest && validation?.can_request && (
           <p className="request-alert request-alert--warn" role="status">
-            이전 신청이 진행 중입니다. 완료된 후 새 신청이 가능합니다.
+            이전 {LABEL_MAP[eco]} 신청이 진행 중입니다. 완료된 후 새 {LABEL_MAP[eco]}{" "}
+            신청이 가능합니다.
           </p>
         )}
       </form>
@@ -464,7 +475,7 @@ function PackageRequestForm({ eco }: { eco: RequestEco }) {
 
       {error && <div className="result__error">{error}</div>}
 
-      {result?.packages && result.packages.length > 0 && (
+      {ecoResult?.packages && ecoResult.packages.length > 0 && (
         <div className="request-result">
           <div className="request-result__header">
             <span className="badge badge--success">최근 신청</span>
@@ -474,17 +485,17 @@ function PackageRequestForm({ eco }: { eco: RequestEco }) {
           </div>
           <p className="result__meta">
             <strong>
-              {result.packages.map((p) => `${p.name}==${p.version}`).join(", ")}
+              {ecoResult.packages.map((p) => `${p.name}==${p.version}`).join(", ")}
             </strong>
-            {result.requested_by ? ` · @${result.requested_by}` : ""}
+            {ecoResult.requested_by ? ` · @${ecoResult.requested_by}` : ""}
           </p>
-          {result.delivery === "done" ? (
+          {ecoResult.delivery === "done" ? (
             <div className="request-alert request-alert--success" role="status">
               Hosted에 등록되었습니다. 패키지 검색에서 확인할 수 있습니다.
             </div>
-          ) : result.delivery === "delivering" ||
-            result.delivery === "merged" ||
-            result.merged ? (
+          ) : ecoResult.delivery === "delivering" ||
+            ecoResult.delivery === "merged" ||
+            ecoResult.merged ? (
             <p className="request-result__status" role="status">
               패키지 받는중…
             </p>

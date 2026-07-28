@@ -251,7 +251,91 @@ async def upstream_version_exists(
         except httpx.HTTPError:
             return await _npm_proxy_has_version(proxy_repo, encoded, version)
 
+    if fmt == "nuget":
+        package_id = name.strip().lower()
+        ver = version.strip().lower()
+        # Prefer public NuGet Gallery flat container when reachable.
+        gallery = await _nuget_gallery_has_version(package_id, ver)
+        if gallery is True:
+            return True
+        if gallery is False:
+            return False
+        # Corporate networks often cannot reach api.nuget.org (SSL MITM / block).
+        return await _nuget_proxy_has_version(proxy_repo, package_id, ver)
+
     raise ValueError(f"Upstream check not implemented for format: {package_format}")
+
+
+def _nuget_nupkg_path(package_id: str, version: str) -> str:
+    """Relative flat-container path for a NuGet package version.
+
+    NuGet protocol requires lowercased id and version in the URL.
+    """
+    return (
+        f"v3-flatcontainer/{package_id}/{version}/{package_id}.{version}.nupkg"
+    )
+
+
+async def _nuget_gallery_has_version(package_id: str, version: str) -> bool | None:
+    """Return True/False if Gallery responds; None if unreachable (try proxy)."""
+    base = settings.nuget_gallery_base_url.rstrip("/")
+    url = f"{base}/{_nuget_nupkg_path(package_id, version)}"
+    # 1) honor shared verify setting  2) on SSL/connect failure retry verify=False
+    # (corporate MITM often breaks certifi trust for public registries)
+    for verify in (settings.nexus_verify_ssl, False):
+        try:
+            async with httpx.AsyncClient(timeout=30.0, verify=verify) as client:
+                response = await client.head(url, follow_redirects=True)
+                if response.status_code in (405, 501):
+                    response = await client.get(url, follow_redirects=True)
+            if response.status_code == 404:
+                return False
+            response.raise_for_status()
+            return True
+        except httpx.HTTPError:
+            if verify is False:
+                return None
+            continue
+    return None
+
+
+async def _nuget_proxy_has_version(proxy_repo: str, package_id: str, version: str) -> bool:
+    nexus_base = settings.nexus_base_url.rstrip("/")
+    nupkg_url = (
+        f"{nexus_base}/repository/{proxy_repo}/{_nuget_nupkg_path(package_id, version)}"
+    )
+    index_url = (
+        f"{nexus_base}/repository/{proxy_repo}/v3-flatcontainer/{package_id}/index.json"
+    )
+    async with httpx.AsyncClient(verify=settings.nexus_verify_ssl) as client:
+        response = await client.head(
+            nupkg_url, auth=_auth(), timeout=60.0, follow_redirects=True
+        )
+        if response.status_code in (405, 501):
+            response = await client.get(
+                nupkg_url, auth=_auth(), timeout=60.0, follow_redirects=True
+            )
+        if response.status_code == 200:
+            return True
+        if response.status_code not in (404,):
+            try:
+                response.raise_for_status()
+                return True
+            except httpx.HTTPError:
+                pass
+
+        # Fallback: flat-container index.json version list (proxy may list without nupkg path)
+        idx = await client.get(
+            index_url, auth=_auth(), timeout=60.0, follow_redirects=True
+        )
+        if idx.status_code == 404:
+            return False
+        idx.raise_for_status()
+        try:
+            versions = (idx.json() or {}).get("versions") or []
+        except ValueError:
+            return False
+        return version in [str(v).lower() for v in versions]
 
 
 async def _npm_proxy_has_version(proxy_repo: str, encoded_name: str, version: str) -> bool:

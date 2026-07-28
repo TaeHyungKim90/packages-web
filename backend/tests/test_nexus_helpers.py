@@ -191,4 +191,157 @@ def test_map_item_ok():
 def test_default_hosted_for_format():
     assert default_hosted_for_format("pypi") == "pypi-hosted"
     assert default_hosted_for_format("NPM") == "npm-hosted"
+    assert default_hosted_for_format("nuget") == "nuget-hosted"
     assert default_hosted_for_format("unknown") == ""
+
+
+@pytest.mark.asyncio
+async def test_upstream_version_exists_nuget_gallery_ok(monkeypatch):
+    class _Resp:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def head(self, url, timeout=None, follow_redirects=None, auth=None):
+            assert "api.nuget.org/v3-flatcontainer/microsoft.build/18.8.2/" in url
+            assert url.endswith("microsoft.build.18.8.2.nupkg")
+            return _Resp()
+
+        async def get(self, url, timeout=None, follow_redirects=None, auth=None):
+            raise AssertionError("GET should not be needed when HEAD succeeds")
+
+    monkeypatch.setattr(httpx, "AsyncClient", _Client)
+    assert (
+        await upstream_version_exists(
+            package_format="nuget",
+            proxy_repo="nuget-proxy",
+            name="Microsoft.Build",
+            version="18.8.2",
+        )
+        is True
+    )
+
+
+@pytest.mark.asyncio
+async def test_upstream_version_exists_nuget_gallery_404(monkeypatch):
+    class _Resp:
+        status_code = 404
+
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError("404", request=None, response=self)
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def head(self, url, timeout=None, follow_redirects=None, auth=None):
+            return _Resp()
+
+    monkeypatch.setattr(httpx, "AsyncClient", _Client)
+    assert (
+        await upstream_version_exists(
+            package_format="nuget",
+            proxy_repo="nuget-proxy",
+            name="Missing.Package",
+            version="9.9.9",
+        )
+        is False
+    )
+
+
+@pytest.mark.asyncio
+async def test_upstream_version_exists_nuget_ssl_retries_verify_false(monkeypatch):
+    calls: list[bool | None] = []
+
+    class _Resp:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            self.verify = kwargs.get("verify", True)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def head(self, url, timeout=None, follow_redirects=None, auth=None):
+            calls.append(self.verify)
+            if self.verify is not False:
+                raise httpx.ConnectError("ssl")
+            return _Resp()
+
+    monkeypatch.setattr(httpx, "AsyncClient", _Client)
+    assert (
+        await upstream_version_exists(
+            package_format="nuget",
+            proxy_repo="nuget-proxy",
+            name="Microsoft.Build",
+            version="17.14.28",
+        )
+        is True
+    )
+    assert True in calls or calls[0] is True
+    assert False in calls
+
+
+@pytest.mark.asyncio
+async def test_upstream_version_exists_nuget_falls_back_to_proxy(monkeypatch):
+    class _ProxyResp:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            self._verify = kwargs.get("verify")
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def head(self, url, timeout=None, follow_redirects=None, auth=None):
+            if "api.nuget.org" in url:
+                raise httpx.ConnectError("ssl")
+            assert "repository/nuget-proxy/v3-flatcontainer/" in url
+            assert "newtonsoft.json/13.0.3/" in url
+            return _ProxyResp()
+
+        async def get(self, url, timeout=None, follow_redirects=None, auth=None):
+            raise AssertionError("GET should not be needed when HEAD succeeds")
+
+    monkeypatch.setattr(httpx, "AsyncClient", _Client)
+    # Both verify=True and verify=False gallery attempts fail with ConnectError → proxy
+    assert (
+        await upstream_version_exists(
+            package_format="nuget",
+            proxy_repo="nuget-proxy",
+            name="Newtonsoft.Json",
+            version="13.0.3",
+        )
+        is True
+    )

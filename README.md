@@ -1,6 +1,6 @@
 # packages-web
 
-Nexus **Hosted** 저장소 패키지 검색과 PyPI / npm 패키지 신청(GitOps PR)을 제공하는 웹 도구입니다.
+Nexus **Hosted** 저장소 패키지 검색과 PyPI / npm / NuGet 패키지 신청(GitOps PR)을 제공하는 웹 도구입니다.
 
 GHES(GitHub Enterprise) 계정으로 로그인한 뒤 사용할 수 있습니다.
 
@@ -12,7 +12,7 @@ GHES(GitHub Enterprise) 계정으로 로그인한 뒤 사용할 수 있습니다
 - **버전**(선택) 지정 시 해당 버전의 정확 일치·부분 일치 검색
 - 이름 없이 버전만 입력하는 검색은 지원하지 않음
 
-### PyPI / npm 패키지 신청
+### 패키지 신청 (PyPI / npm / NuGet)
 
 - 신청 전 **검증**: 업스트림 버전 존재, Hosted·inventory·요청 목록 중복 확인
 - 한 번에 최대 **10개** 패키지를 한 PR로 신청 (`+` / `−` 행 추가·삭제)
@@ -21,8 +21,6 @@ GHES(GitHub Enterprise) 계정으로 로그인한 뒤 사용할 수 있습니다
   - 검사 중 → 받는 중 → Hosted 등록 완료
 - 이전 신청이 완료될 때까지 추가 신청 불가 (검증은 가능)
 - 10개를 넘는 다량 신청은 담당자에게 메일로 목록을 보내 등록 요청
-
-> NuGet 신청 UI는 준비 중입니다.
 
 ## 구조
 
@@ -73,7 +71,7 @@ GET /api/packages/check?format=pypi&name=requests
 GET /api/packages/check?format=pypi&name=requests&version=2.32.3
 ```
 
-### 패키지 신청 검증 / 신청 / 상태 (pypi | npm)
+### 패키지 신청 검증 / 신청 / 상태 (pypi | npm | nuget)
 
 ```text
 POST /api/request/{eco}/validate
@@ -81,15 +79,15 @@ POST /api/request/{eco}
 GET  /api/request/{eco}/{pr_number}?packages=name==ver[,name2==ver2]
 ```
 
-`{eco}`는 `pypi` 또는 `npm`입니다.
+`{eco}`는 `pypi`, `npm`, `nuget`입니다.
 
 요청 본문 예시:
 
 ```json
 {
   "packages": [
-    { "name": "lodash", "version": "4.17.21" },
-    { "name": "@scope/pkg", "version": "1.2.3" }
+    { "name": "Newtonsoft.Json", "version": "13.0.3" },
+    { "name": "Serilog", "version": "4.0.0" }
   ]
 }
 ```
@@ -113,6 +111,7 @@ GET  /api/request/{eco}/{pr_number}?packages=name==ver[,name2==ver2]
 | `NEXUS_VERIFY_SSL` | TLS 인증서 검증 여부 |
 | `PYPI_JSON_BASE_URL` | PyPI JSON API 베이스 (업스트림 버전 확인) |
 | `NPM_REGISTRY_BASE_URL` | npm registry 베이스 |
+| `NUGET_GALLERY_BASE_URL` | NuGet Gallery 베이스 (업스트림 버전 확인) |
 | `CORS_ORIGINS` | 허용할 프론트 오리진 (쉼표 구분) |
 | `GITHUB_BASE_URL` / `GITHUB_API_BASE` | GHES URL |
 | `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET` | OAuth 앱 |
@@ -130,4 +129,4 @@ GET  /api/request/{eco}/{pr_number}?packages=name==ver[,name2==ver2]
 | 3 | GHES OAuth 로그인 | 완료 |
 | 4 | PyPI 패키지 신청 (검증 · 다중 신청 · 진행 상태) | 완료 |
 | 5 | npm 패키지 신청 | 완료 |
-| 6 | NuGet 신청 | 추후 계획 |
+| 6 | NuGet 패키지 신청 | 완료 |
