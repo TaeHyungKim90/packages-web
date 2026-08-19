@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findMatchRanges, paginate, PAGE_SIZE } from "./result";
+import { findMatchRanges, paginate, pageWindow, PAGE_SIZE } from "./result";
 
 describe("findMatchRanges", () => {
   it("finds substring matches case-insensitively", () => {
@@ -35,5 +35,25 @@ describe("paginate", () => {
   it("clamps out-of-range page", () => {
     expect(paginate(items, 99).currentPage).toBe(3);
     expect(paginate(items, 0).currentPage).toBe(1);
+  });
+});
+
+describe("pageWindow", () => {
+  it("lists all pages when few", () => {
+    expect(pageWindow(1, 5)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("inserts ellipsis for a large range", () => {
+    expect(pageWindow(10, 30)).toEqual([
+      1,
+      "ellipsis",
+      8,
+      9,
+      10,
+      11,
+      12,
+      "ellipsis",
+      30,
+    ]);
   });
 });

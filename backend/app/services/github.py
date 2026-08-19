@@ -236,6 +236,33 @@ async def enable_automerge(pull_node_id: str) -> tuple[bool, str]:
     return False, last_error
 
 
+async def is_org_owner(login: str) -> bool:
+    """True if login is an active owner (role=admin) of GITHUB_ORG."""
+    username = login.strip()
+    if not username or not settings.github_token:
+        return False
+    org = settings.github_org.strip()
+    if not org:
+        return False
+    url = _api(f"/orgs/{org}/memberships/{username}")
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=_headers(), timeout=15.0)
+    except httpx.HTTPError:
+        return False
+    if response.status_code != 200:
+        return False
+    try:
+        data = response.json()
+    except ValueError:
+        return False
+    if not isinstance(data, dict):
+        return False
+    role = str(data.get("role") or "").lower()
+    state = str(data.get("state") or "").lower()
+    return role == "admin" and state == "active"
+
+
 async def merge_pull(
     owner: str,
     repo: str,

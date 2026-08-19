@@ -6,6 +6,7 @@ import type {
   PackageRequestStatus,
   PackageRequestValidation,
   PackageType,
+  ProxyHealthResponse,
 } from "../types";
 
 /** Empty = same-origin via Vite proxy (required for session cookie). */
@@ -14,10 +15,33 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 type RequestEco = PackageType;
 
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(`${API_BASE}${path}`, {
-    ...init,
-    credentials: "include",
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      credentials: "include",
+      redirect: "manual",
+    });
+  } catch {
+    redirectToLogin();
+    throw new Error("unauthorized");
+  }
+  if (isLoginRedirect(res)) {
+    redirectToLogin();
+    throw new Error("unauthorized");
+  }
+  return res;
+}
+
+function isLoginRedirect(res: Response): boolean {
+  if (res.type === "opaqueredirect") return true;
+  return [301, 302, 303, 307, 308, 401].includes(res.status);
+}
+
+function redirectToLogin(): void {
+  if (typeof window === "undefined") return;
+  if (window.location.pathname === "/login") return;
+  window.location.assign("/login");
 }
 
 export async function checkHealth(): Promise<{ status: string }> {
@@ -121,6 +145,14 @@ export async function fetchRequestStatus(
   const res = await apiFetch(
     `/api/request/${eco}/${prNumber}${qs ? `?${qs}` : ""}`,
   );
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+export async function fetchProxyHealth(
+  eco: RequestEco,
+): Promise<ProxyHealthResponse> {
+  const res = await apiFetch(`/api/proxy-health/${eco}`);
   if (!res.ok) throw new Error(await readError(res));
   return res.json();
 }

@@ -6,6 +6,8 @@ from main import app
 
 client = TestClient(app)
 
+client = TestClient(app)
+
 
 def _authed_client() -> TestClient:
     response = client.get("/health")
@@ -42,11 +44,27 @@ def test_me_requires_auth():
     assert response.status_code == 401
 
 
-def test_me_with_session():
+def test_me_with_session(monkeypatch):
+    async def _yes(_login: str) -> bool:
+        return True
+
+    monkeypatch.setattr("app.routers.auth.github.is_org_owner", _yes)
     c = _authed_client()
     response = c.get("/api/auth/me")
     assert response.status_code == 200
     assert response.json()["login"] == "tester"
+    assert response.json()["can_request"] is True
+
+
+def test_me_can_request_false_for_member(monkeypatch):
+    async def _no(_login: str) -> bool:
+        return False
+
+    monkeypatch.setattr("app.routers.auth.github.is_org_owner", _no)
+    c = _authed_client()
+    response = c.get("/api/auth/me")
+    assert response.status_code == 200
+    assert response.json()["can_request"] is False
 
 
 def test_check_requires_name_when_authed():
@@ -64,11 +82,13 @@ def test_check_rejects_unknown_format_when_authed():
     assert response.status_code == 400
 
 
-def test_login_unconfigured_returns_503(monkeypatch):
+def test_login_unconfigured_redirects_to_login(monkeypatch):
     monkeypatch.setattr(settings, "github_oauth_client_id", "")
     monkeypatch.setattr(settings, "github_oauth_client_secret", "")
     response = client.get("/api/auth/login", follow_redirects=False)
-    assert response.status_code == 503
+    assert response.status_code == 302
+    assert "/login" in response.headers["location"]
+    assert "OAuth" in response.headers["location"]
 
 
 def test_login_redirects_when_configured(monkeypatch):

@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from app.config import settings
-from app.deps import require_user
+from app.deps import require_cicd_owner
 from app.schemas import (
     PackageRequestBody,
     PackageRequestCheck,
@@ -21,7 +21,7 @@ from app.services.session import SessionUser
 
 router = APIRouter(prefix="/request", tags=["request"])
 
-CurrentUser = Annotated[SessionUser, Depends(require_user)]
+CurrentUser = Annotated[SessionUser, Depends(require_cicd_owner)]
 
 SUPPORTED_REQUEST_ECOSYSTEMS = frozenset({"pypi", "npm", "nuget"})
 EcoPath = Annotated[str, Path(description="Package ecosystem: pypi | npm | nuget")]

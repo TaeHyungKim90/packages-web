@@ -1,6 +1,6 @@
 # packages-web
 
-Nexus **Hosted** 저장소 패키지 검색과 PyPI / npm / NuGet 패키지 신청(GitOps PR)을 제공하는 웹 도구입니다.
+Nexus **Hosted** 저장소 패키지 검색, PyPI / npm / NuGet 패키지 신청(GitOps PR), 프록시 저장소 **보안 취약점(Health Check)** 조회를 제공하는 웹 도구입니다.
 
 GHES(GitHub Enterprise) 계정으로 로그인한 뒤 사용할 수 있습니다.
 
@@ -21,6 +21,12 @@ GHES(GitHub Enterprise) 계정으로 로그인한 뒤 사용할 수 있습니다
   - 검사 중 → 받는 중 → Hosted 등록 완료
 - 이전 신청이 완료될 때까지 추가 신청 불가 (검증은 가능)
 - 10개를 넘는 다량 신청은 담당자에게 메일로 목록을 보내 등록 요청
+
+### 패키지 보안 취약점 (PyPI / npm / NuGet)
+
+- Nexus `*-proxy-health` 저장소의 Repository Health Check 상세 리포트를 표시
+- **View by**: Vulnerabilities(기본) / Licenses
+- CVE는 리포트에 포함된 링크로 연결
 
 ## 구조
 
@@ -100,6 +106,14 @@ GET  /api/request/{eco}/{pr_number}?packages=name==ver[,name2==ver2]
 | `merged` / `delivering` | 머지됨, Hosted 반영 대기 |
 | `done` | Hosted에 모두 등록됨 |
 
+### 프록시 Health Check (pypi | npm | nuget)
+
+```text
+GET /api/proxy-health/{eco}
+```
+
+Nexus `pypi-proxy-health` / `npm-proxy-health` / `nuget-proxy-health`의 취약점·라이선스 목록을 반환합니다. 해당 저장소가 없으면 각 eco의 `*-proxy`로 조회합니다.
+
 ## 환경변수
 
 루트 `.env.example`을 `.env`로 복사한 뒤 값을 채웁니다.
@@ -130,3 +144,4 @@ GET  /api/request/{eco}/{pr_number}?packages=name==ver[,name2==ver2]
 | 4 | PyPI 패키지 신청 (검증 · 다중 신청 · 진행 상태) | 완료 |
 | 5 | npm 패키지 신청 | 완료 |
 | 6 | NuGet 패키지 신청 | 완료 |
+| 7 | 패키지 보안 취약점 (Proxy Health Check) | 완료 |

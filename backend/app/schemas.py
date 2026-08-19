@@ -32,6 +32,7 @@ class UserResponse(BaseModel):
     login: str
     name: str | None = None
     avatar_url: str | None = None
+    can_request: bool = False
 
 
 class PackageRequestItem(BaseModel):
@@ -93,3 +94,32 @@ class PackageRequestStatus(BaseModel):
     packages: list[PackageRequestDeliveryItem] = Field(default_factory=list)
     # pending | merged | delivering | done
     delivery: str = "pending"
+
+
+class ProxyHealthVulnerability(BaseModel):
+    threat_level: float | None = None
+    problem_code: str
+    problem_url: str = ""
+    group: str = ""
+    artifact: str
+    version: str
+    imported_at: str | None = None
+
+
+class ProxyHealthLicense(BaseModel):
+    license_threat: str = ""
+    declared_license: str = ""
+    observed_licenses: str = ""
+    group: str = ""
+    artifact: str
+    version: str
+    security_issues: int | None = None
+    imported_at: str | None = None
+
+
+class ProxyHealthResponse(BaseModel):
+    ecosystem: str
+    repository: str
+    generated_at: str | None = None
+    vulnerabilities: list[ProxyHealthVulnerability] = Field(default_factory=list)
+    licenses: list[ProxyHealthLicense] = Field(default_factory=list)

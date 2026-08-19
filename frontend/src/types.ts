@@ -26,6 +26,7 @@ export interface AuthUser {
   login: string;
   name: string | null;
   avatar_url: string | null;
+  can_request: boolean;
 }
 
 export interface PackageRequestItem {
@@ -101,4 +102,35 @@ export interface StoredPackageRequest {
 
 /** @deprecated Use StoredPackageRequest */
 export type StoredPypiRequest = StoredPackageRequest;
+
+export type ProxyHealthView = "vulnerabilities" | "licenses";
+
+export interface ProxyHealthVulnerability {
+  threat_level: number | null;
+  problem_code: string;
+  problem_url: string;
+  group: string;
+  artifact: string;
+  version: string;
+  imported_at?: string | null;
+}
+
+export interface ProxyHealthLicense {
+  license_threat: string;
+  declared_license: string;
+  observed_licenses: string;
+  group: string;
+  artifact: string;
+  version: string;
+  security_issues: number | null;
+  imported_at?: string | null;
+}
+
+export interface ProxyHealthResponse {
+  ecosystem: string;
+  repository: string;
+  generated_at: string | null;
+  vulnerabilities: ProxyHealthVulnerability[];
+  licenses: ProxyHealthLicense[];
+}
 

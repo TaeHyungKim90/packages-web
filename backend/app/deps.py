@@ -1,6 +1,8 @@
-from fastapi import HTTPException, Request, Response
+from fastapi import Depends, HTTPException, Request, Response
+from typing import Annotated
 
 from app.config import settings
+from app.services import github
 from app.services.session import SessionUser, dump_session, load_session
 
 
@@ -43,3 +45,14 @@ def optional_user(request: Request) -> SessionUser | None:
         return load_session(token)
     except ValueError:
         return None
+
+
+async def require_cicd_owner(
+    user: Annotated[SessionUser, Depends(require_user)],
+) -> SessionUser:
+    if await github.is_org_owner(user.login):
+        return user
+    raise HTTPException(
+        status_code=403,
+        detail="CICD 조직 owner만 패키지를 신청할 수 있습니다",
+    )

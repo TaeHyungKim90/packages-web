@@ -1,20 +1,23 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router";
 
-const REQUEST_ITEMS = [
-  { type: "pypi", label: "pypi", to: "/request/pypi" },
-  { type: "npm", label: "npm", to: "/request/npm" },
-  { type: "nuget", label: "nuget", to: "/request/nuget" },
+const ECOSYSTEMS = [
+  { type: "pypi", label: "pypi" },
+  { type: "npm", label: "npm" },
+  { type: "nuget", label: "nuget" },
 ] as const;
 
-export default function Header() {
+type MenuId = "request" | "vuln";
+
+export default function Header({ canRequest = false }: { canRequest?: boolean }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const requestActive = pathname.startsWith("/request");
-  const [menuOpen, setMenuOpen] = useState(false);
+  const vulnActive = pathname.startsWith("/vuln");
+  const [openMenu, setOpenMenu] = useState<MenuId | null>(null);
 
   useEffect(() => {
-    setMenuOpen(false);
+    setOpenMenu(null);
   }, [pathname]);
 
   return (
@@ -31,44 +34,104 @@ export default function Header() {
             패키지검색
           </NavLink>
         </li>
-        <li
-          className={`header-nav__item header-nav__item--dropdown${menuOpen ? " header-nav__item--open" : ""}`}
-          onMouseEnter={() => setMenuOpen(true)}
-          onMouseLeave={() => setMenuOpen(false)}
+        {canRequest && (
+        <Dropdown
+          id="request"
+          label="패키지신청"
+          active={requestActive}
+          open={openMenu === "request"}
+          onHover={(open) => setOpenMenu(open ? "request" : null)}
+          onParentClick={() => {
+            navigate("/request/pypi");
+            setOpenMenu(null);
+          }}
         >
-          <button
-            type="button"
-            className={`header-nav__link header-nav__link--parent${requestActive ? " header-nav__link--active" : ""}`}
-            aria-expanded={menuOpen}
-            aria-haspopup="true"
-            onClick={() => {
-              navigate("/request/pypi");
-              setMenuOpen(false);
-            }}
-          >
-            패키지신청
-          </button>
-          <ul
-            className="header-nav__submenu"
-            role="menu"
-            style={{ display: menuOpen ? "block" : "none" }}
-          >
-            {REQUEST_ITEMS.map((item) => (
-              <li key={item.type}>
-                <NavLink
-                  to={item.to}
-                  className={({ isActive }) =>
-                    `header-nav__sublink${isActive ? " header-nav__sublink--active" : ""}`
-                  }
-                  onClick={() => setMenuOpen(false)}
-                >
-                  {item.label}
-                </NavLink>
-              </li>
-            ))}
-          </ul>
-        </li>
+          {ECOSYSTEMS.map((item) => (
+            <li key={item.type}>
+              <NavLink
+                to={`/request/${item.type}`}
+                className={({ isActive }) =>
+                  `header-nav__sublink${isActive ? " header-nav__sublink--active" : ""}`
+                }
+                onClick={() => setOpenMenu(null)}
+              >
+                {item.label}
+              </NavLink>
+            </li>
+          ))}
+        </Dropdown>
+        )}
+        <Dropdown
+          id="vuln"
+          label="패키지 보안 취약점"
+          active={vulnActive}
+          open={openMenu === "vuln"}
+          onHover={(open) => setOpenMenu(open ? "vuln" : null)}
+          onParentClick={() => {
+            navigate("/vuln/pypi");
+            setOpenMenu(null);
+          }}
+        >
+          {ECOSYSTEMS.map((item) => (
+            <li key={item.type}>
+              <NavLink
+                to={`/vuln/${item.type}`}
+                className={({ isActive }) =>
+                  `header-nav__sublink${isActive ? " header-nav__sublink--active" : ""}`
+                }
+                onClick={() => setOpenMenu(null)}
+              >
+                {item.label}
+              </NavLink>
+            </li>
+          ))}
+        </Dropdown>
       </ul>
     </nav>
+  );
+}
+
+function Dropdown({
+  id,
+  label,
+  active,
+  open,
+  onHover,
+  onParentClick,
+  children,
+}: {
+  id: MenuId;
+  label: string;
+  active: boolean;
+  open: boolean;
+  onHover: (open: boolean) => void;
+  onParentClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <li
+      className={`header-nav__item header-nav__item--dropdown${open ? " header-nav__item--open" : ""}`}
+      onMouseEnter={() => onHover(true)}
+      onMouseLeave={() => onHover(false)}
+    >
+      <button
+        type="button"
+        className={`header-nav__link header-nav__link--parent${active ? " header-nav__link--active" : ""}`}
+        aria-expanded={open}
+        aria-haspopup="true"
+        aria-controls={`${id}-menu`}
+        onClick={onParentClick}
+      >
+        {label}
+      </button>
+      <ul
+        id={`${id}-menu`}
+        className="header-nav__submenu"
+        role="menu"
+        style={{ display: open ? "block" : "none" }}
+      >
+        {children}
+      </ul>
+    </li>
   );
 }

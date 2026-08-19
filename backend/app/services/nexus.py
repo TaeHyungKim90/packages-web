@@ -1,4 +1,6 @@
+import asyncio
 import re
+from datetime import UTC, datetime
 from urllib.parse import unquote
 
 import httpx
@@ -15,6 +17,8 @@ from app.schemas import Package, PackageCheckResponse, PackageListResponse, Pack
 
 SEARCH_PATH = "/service/rest/v1/search"
 MAX_CHECK_PAGES = 5
+MAX_BLOB_PAGES = 20
+BLOB_SEARCH_CONCURRENCY = 8
 
 
 def normalize_pypi_name(name: str) -> str:
@@ -358,3 +362,185 @@ def default_hosted_for_format(package_format: str) -> str:
     if key in ECOSYSTEM_MAP:
         return ECOSYSTEM_MAP[key].hosted_repo
     return ""
+
+
+def _parse_blob_created(value: object) -> datetime | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        ts = float(value)
+        if ts > 10_000_000_000:
+            ts /= 1000
+        if ts <= 0:
+            return None
+        return datetime.fromtimestamp(ts, tz=UTC)
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    if text.isdigit():
+        return _parse_blob_created(int(text))
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed
+
+
+def _iso_from_parsed(parsed: datetime) -> str:
+    return parsed.astimezone(UTC).isoformat()
+
+
+def item_blob_created(raw: dict) -> str | None:
+    """Latest blobCreated on a search component (top-level or assets)."""
+    assets = raw.get("assets") if isinstance(raw.get("assets"), list) else []
+    values: list[object] = [raw.get("blobCreated")]
+    values.extend(
+        asset.get("blobCreated") for asset in assets if isinstance(asset, dict)
+    )
+    if not any(_parse_blob_created(v) is not None for v in values):
+        values.append(raw.get("lastModified"))
+        values.extend(
+            asset.get("lastModified") for asset in assets if isinstance(asset, dict)
+        )
+    candidates: list[datetime] = []
+    for value in values:
+        parsed = _parse_blob_created(value)
+        if parsed is not None:
+            candidates.append(parsed)
+    if not candidates:
+        return None
+    return _iso_from_parsed(max(candidates))
+
+
+def import_name_key(name: str, package_format: str) -> str:
+    if package_format == "pypi":
+        return normalize_pypi_name(name)
+    return name.strip().lower()
+
+
+def _search_name_params(artifact: str, package_format: str) -> dict[str, str]:
+    name = artifact.strip()
+    if package_format == "npm" and name.startswith("@") and "/" in name:
+        scope, pkg = name[1:].split("/", 1)
+        return {"name": pkg, "group": scope}
+    return {"q": name}
+
+
+async def _search_page(
+    client: httpx.AsyncClient, params: dict[str, str]
+) -> dict:
+    url = f"{settings.nexus_base_url.rstrip('/')}{SEARCH_PATH}"
+    response = await client.get(
+        url, params=params, auth=_auth(), timeout=30.0, follow_redirects=True
+    )
+    if response.status_code == 404:
+        return {"items": []}
+    response.raise_for_status()
+    return response.json()
+
+
+async def _blob_created_in_repo(
+    client: httpx.AsyncClient,
+    *,
+    repository: str,
+    package_format: str,
+    artifact: str,
+    wanted_versions: set[str],
+) -> dict[tuple[str, str], str]:
+    if not wanted_versions:
+        return {}
+    params = {
+        "repository": repository,
+        "format": package_format,
+        **_search_name_params(artifact, package_format),
+    }
+    found: dict[tuple[str, str], str] = {}
+    token: str | None = None
+    name_key = import_name_key(artifact, package_format)
+    for _ in range(MAX_BLOB_PAGES):
+        page_params = dict(params)
+        if token:
+            page_params["continuationToken"] = token
+        try:
+            data = await _search_page(client, page_params)
+        except httpx.HTTPError:
+            return found
+        for raw in data.get("items") or []:
+            if not isinstance(raw, dict):
+                continue
+            display = _display_name(raw) or str(raw.get("name") or "")
+            version = str(raw.get("version") or "")
+            if not display or not version or version not in wanted_versions:
+                continue
+            if import_name_key(display, package_format) != name_key:
+                continue
+            created = item_blob_created(raw)
+            if not created:
+                continue
+            key = (name_key, version)
+            previous = found.get(key)
+            if previous is None:
+                found[key] = created
+            else:
+                left = _parse_blob_created(previous)
+                right = _parse_blob_created(created)
+                if right is not None and (left is None or right > left):
+                    found[key] = created
+        token = data.get("continuationToken")
+        if not token:
+            break
+    return found
+
+
+async def blob_created_map(
+    client: httpx.AsyncClient,
+    *,
+    hosted_repo: str,
+    health_repo: str,
+    package_format: str,
+    keys: set[tuple[str, str]],
+) -> dict[tuple[str, str], str]:
+    """(normalized name, version) → blobCreated. Hosted first, then health_repo."""
+    if not keys:
+        return {}
+    by_name: dict[str, set[str]] = {}
+    for name, version in keys:
+        if name and version:
+            by_name.setdefault(name, set()).add(version)
+
+    resolved: dict[tuple[str, str], str] = {}
+    sem = asyncio.Semaphore(BLOB_SEARCH_CONCURRENCY)
+
+    async def lookup(artifact: str, versions: set[str]) -> None:
+        async with sem:
+            hosted = await _blob_created_in_repo(
+                client,
+                repository=hosted_repo,
+                package_format=package_format,
+                artifact=artifact,
+                wanted_versions=versions,
+            )
+            name_key = import_name_key(artifact, package_format)
+            missing = {
+                ver
+                for ver in versions
+                if (name_key, ver) not in hosted
+            }
+            health: dict[tuple[str, str], str] = {}
+            if missing and health_repo and health_repo != hosted_repo:
+                health = await _blob_created_in_repo(
+                    client,
+                    repository=health_repo,
+                    package_format=package_format,
+                    artifact=artifact,
+                    wanted_versions=missing,
+                )
+            resolved.update(hosted)
+            resolved.update(health)
+
+    await asyncio.gather(
+        *(lookup(name, versions) for name, versions in by_name.items())
+    )
+    return resolved

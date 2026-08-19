@@ -33,6 +33,24 @@ export function RedirectIfAuthed({ auth }: { auth: Auth }) {
   return <Outlet />;
 }
 
+export function RequireRequestAccess({ auth }: { auth: Auth }) {
+  if (auth.isLoading) {
+    return (
+      <div className="auth-loading">
+        <span className="spinner" aria-hidden="true" />
+        인증 확인 중…
+      </div>
+    );
+  }
+  if (!auth.isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  if (!auth.user?.can_request) {
+    return <Navigate to="/search" replace />;
+  }
+  return <Outlet />;
+}
+
 export function RootRedirect({ auth }: { auth: Auth }) {
   if (auth.isLoading) {
     return (

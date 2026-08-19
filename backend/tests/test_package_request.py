@@ -4,6 +4,7 @@ from app.services.github import PullRequest
 from app.services.session import SessionUser
 from fastapi.testclient import TestClient
 from main import app
+import pytest
 
 client = TestClient(app)
 
@@ -20,6 +21,15 @@ def _authed() -> TestClient:
     return client
 
 
+@pytest.fixture(autouse=True)
+def _cicd_owner(monkeypatch):
+    async def _yes(_login: str) -> bool:
+        return True
+
+    monkeypatch.setattr("app.services.github.is_org_owner", _yes)
+    monkeypatch.setattr("app.deps.github.is_org_owner", _yes)
+
+
 def test_request_pypi_requires_auth():
     client.cookies.clear()
     response = client.post(
@@ -27,6 +37,20 @@ def test_request_pypi_requires_auth():
         json={"packages": [{"name": "requests", "version": "2.32.3"}]},
     )
     assert response.status_code == 401
+
+
+def test_request_pypi_forbidden_if_not_owner(monkeypatch):
+    async def _no(_login: str) -> bool:
+        return False
+
+    monkeypatch.setattr("app.services.github.is_org_owner", _no)
+    monkeypatch.setattr("app.deps.github.is_org_owner", _no)
+    c = _authed()
+    response = c.post(
+        "/api/request/pypi",
+        json={"packages": [{"name": "requests", "version": "2.32.3"}]},
+    )
+    assert response.status_code == 403
 
 
 def test_request_pypi_requires_token(monkeypatch):

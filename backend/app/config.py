@@ -13,6 +13,7 @@ class EcosystemConfig:
         ecosystem: str,
         hosted_repo: str,
         proxy_repo: str,
+        health_repo: str,
         gitops_repo: str,
         requests_file: str,
         inventory_file: str,
@@ -20,6 +21,7 @@ class EcosystemConfig:
         self.ecosystem = ecosystem
         self.hosted_repo = hosted_repo
         self.proxy_repo = proxy_repo
+        self.health_repo = health_repo
         self.gitops_repo = gitops_repo
         self.requests_file = requests_file
         self.inventory_file = inventory_file
@@ -30,6 +32,7 @@ ECOSYSTEM_MAP: dict[str, EcosystemConfig] = {
         ecosystem="pypi",
         hosted_repo="pypi-hosted",
         proxy_repo="pypi-proxy",
+        health_repo="pypi-proxy-health",
         gitops_repo="pypiPackages",
         requests_file="requests/pypi_requests_list.yaml",
         inventory_file="inventory/pypi_last_list.yaml",
@@ -38,6 +41,7 @@ ECOSYSTEM_MAP: dict[str, EcosystemConfig] = {
         ecosystem="npm",
         hosted_repo="npm-hosted",
         proxy_repo="npm-proxy",
+        health_repo="npm-proxy-health",
         gitops_repo="npmPackages",
         requests_file="requests/npm_requests_list.yaml",
         inventory_file="inventory/npm_last_list.yaml",
@@ -46,6 +50,7 @@ ECOSYSTEM_MAP: dict[str, EcosystemConfig] = {
         ecosystem="nuget",
         hosted_repo="nuget-hosted",
         proxy_repo="nuget-proxy",
+        health_repo="nuget-proxy-health",
         gitops_repo="nugetPackages",
         requests_file="requests/nuget_requests_list.yaml",
         inventory_file="inventory/nuget_last_list.yaml",
