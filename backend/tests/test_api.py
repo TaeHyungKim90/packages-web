@@ -1,8 +1,8 @@
+import httpx
 from app.config import settings
 from app.deps import set_session_cookie
 from app.services.session import SessionUser
 from fastapi.testclient import TestClient
-import httpx
 from main import app
 
 client = TestClient(app)

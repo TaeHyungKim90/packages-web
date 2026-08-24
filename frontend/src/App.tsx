@@ -11,6 +11,7 @@ import { useAppHealth } from "./hooks/useAppHealth";
 import { useAuth } from "./hooks/useAuth";
 import LoginPage from "./pages/LoginPage";
 import GhesOrgsPage from "./pages/GhesOrgsPage";
+import ProjectPackagesPage from "./pages/ProjectPackagesPage";
 import PackageRequestPage from "./pages/PackageRequestPage";
 import PackageSearchPage from "./pages/PackageSearchPage";
 import ProxyHealthPage from "./pages/ProxyHealthPage";
@@ -41,6 +42,7 @@ export default function App() {
         </Route>
         <Route element={<RequireOrgsAccess auth={auth} />}>
           <Route path="/orgs" element={<GhesOrgsPage />} />
+          <Route path="/project-packages" element={<ProjectPackagesPage />} />
         </Route>
       </Routes>
     </Layout>

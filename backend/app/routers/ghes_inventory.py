@@ -80,7 +80,7 @@ async def save_ghes_orgs(
     # Return merged view again so UI stays consistent with GHES
     try:
         orgs = await ghes_inventory.build_inventory()
-    except GitHubError as exc:
+    except GitHubError:
         # Save succeeded; return saved snapshot if live fetch fails
         return GhesOrgsResponse(
             organizations=[

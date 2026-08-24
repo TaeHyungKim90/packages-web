@@ -7,7 +7,7 @@ const ECOSYSTEMS = [
   { type: "nuget", label: "nuget" },
 ] as const;
 
-type MenuId = "request" | "vuln";
+type MenuId = "request" | "vuln" | "admin";
 
 export default function Header({
   canRequest = false,
@@ -20,7 +20,8 @@ export default function Header({
   const navigate = useNavigate();
   const requestActive = pathname.startsWith("/request");
   const vulnActive = pathname.startsWith("/vuln");
-  const orgsActive = pathname.startsWith("/orgs");
+  const adminActive =
+    pathname.startsWith("/orgs") || pathname.startsWith("/project-packages");
   const [openMenu, setOpenMenu] = useState<MenuId | null>(null);
 
   useEffect(() => {
@@ -94,16 +95,40 @@ export default function Header({
           ))}
         </Dropdown>
         {canViewOrgs && (
-          <li className="header-nav__item">
-            <NavLink
-              to="/orgs"
-              className={({ isActive }) =>
-                `header-nav__link${isActive || orgsActive ? " header-nav__link--active" : ""}`
-              }
-            >
-              GHES 조직
-            </NavLink>
-          </li>
+          <Dropdown
+            id="admin"
+            label="관리"
+            active={adminActive}
+            open={openMenu === "admin"}
+            onHover={(open) => setOpenMenu(open ? "admin" : null)}
+            onParentClick={() => {
+              navigate("/orgs");
+              setOpenMenu(null);
+            }}
+          >
+            <li>
+              <NavLink
+                to="/orgs"
+                className={({ isActive }) =>
+                  `header-nav__sublink${isActive ? " header-nav__sublink--active" : ""}`
+                }
+                onClick={() => setOpenMenu(null)}
+              >
+                GHES 조직
+              </NavLink>
+            </li>
+            <li>
+              <NavLink
+                to="/project-packages"
+                className={({ isActive }) =>
+                  `header-nav__sublink${isActive ? " header-nav__sublink--active" : ""}`
+                }
+                onClick={() => setOpenMenu(null)}
+              >
+                과제별 패키지
+              </NavLink>
+            </li>
+          </Dropdown>
         )}
       </ul>
     </nav>

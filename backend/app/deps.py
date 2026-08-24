@@ -1,5 +1,6 @@
-from fastapi import Depends, HTTPException, Request, Response
 from typing import Annotated
+
+from fastapi import Depends, HTTPException, Request, Response
 
 from app.config import settings
 from app.services import github

@@ -1,5 +1,4 @@
 import httpx
-
 from app.nexus_http import nexus_http_exception
 
 

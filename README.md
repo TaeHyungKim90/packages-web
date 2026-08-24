@@ -143,6 +143,14 @@ Nexus `pypi-proxy-health` / `npm-proxy-health` / `nuget-proxy-health`의 취약�
 - 저장 시 YAML을 디스크에 씁니다. (컨테이너가 read-only면 `config/`를 쓰기 가능하게 마운트해야 합니다.)
 - 앱의 패키지 신청 대상 조직은 계속 `.env`의 `GITHUB_ORG`를 사용합니다.
 
+### 과제별 패키지
+
+`sk-inc` 계정만 **관리 > 과제별 패키지** (`/project-packages`)를 쓸 수 있습니다.
+
+- **동기화**가 GHES에서 managed 과제의 `uv.lock` / `package-lock.json` / `packages.lock.json`을 읽고 [`config/ghes-project-packages.yaml`](config/ghes-project-packages.yaml)에 스냅샷을 저장합니다. SHA가 같으면 재파싱하지 않습니다.
+- 취약점 최대 점수는 [`config/ghes-package-vulnerabilities.yaml`](config/ghes-package-vulnerabilities.yaml)에 캐시합니다 (GET 시 Nexus 재조회 없음).
+- 목록은 패키지·버전·반입날짜·CVE 점수·과제명(여러 과제면 `AAC, AAP`)입니다.
+
 ## 구현 단계
 
 | 단계 | 내용 | 상태 |

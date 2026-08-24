@@ -1,5 +1,12 @@
 from app.config import settings
-from app.routers import auth, ghes_inventory, package_request, packages, proxy_health
+from app.routers import (
+    auth,
+    ghes_inventory,
+    package_request,
+    packages,
+    project_packages,
+    proxy_health,
+)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -18,6 +25,7 @@ app.include_router(packages.router, prefix="/api")
 app.include_router(package_request.router, prefix="/api")
 app.include_router(proxy_health.router, prefix="/api")
 app.include_router(ghes_inventory.router, prefix="/api")
+app.include_router(project_packages.router, prefix="/api")
 
 
 @app.get("/health")

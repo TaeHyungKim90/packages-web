@@ -1,10 +1,10 @@
+import pytest
 from app.config import settings
 from app.deps import set_session_cookie
 from app.services.github import PullRequest
 from app.services.session import SessionUser
 from fastapi.testclient import TestClient
 from main import app
-import pytest
 
 client = TestClient(app)
 

@@ -152,3 +152,24 @@ export interface GhesOrgsResponse {
   organizations: GhesOrgItem[];
 }
 
+export interface AggregatedPackageRow {
+  format: "pypi" | "npm" | "nuget" | string;
+  name: string;
+  version: string;
+  imported_at: string | null;
+  max_threat_level: number | null;
+  organizations: string[];
+}
+
+export interface ProjectPackagesListResponse {
+  collected_at: string | null;
+  items: AggregatedPackageRow[];
+}
+
+export interface ProjectPackagesSyncResult {
+  collected_at: string | null;
+  org_count: number;
+  item_count: number;
+  items: AggregatedPackageRow[];
+}
+

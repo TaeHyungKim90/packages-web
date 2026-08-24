@@ -97,6 +97,8 @@ class Settings(BaseSettings):
     # Empty = resolve to <repo>/config/ghes-orgs.yaml
     ghes_orgs_yaml_path: str = ""
     ghes_inventory_login: str = "sk-inc"
+    ghes_project_packages_yaml_path: str = ""
+    ghes_package_vulnerabilities_yaml_path: str = ""
 
     @field_validator("cors_origins", mode="before")
     @classmethod

@@ -236,7 +236,8 @@ button:disabled {
   gap: 1.25rem;
 }
 
-.layout__main:has(.health-page) {
+.layout__main:has(.health-page),
+.layout__main:has(.proj-pkg-page) {
   max-width: 1100px;
 }
 
@@ -1158,4 +1159,36 @@ button:disabled {
 .orgs-list__empty-repo {
   color: var(--muted, #666);
   font-size: 0.875rem;
+}
+
+.proj-pkg__search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+}
+
+.proj-pkg__search label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+}
+
+.proj-pkg__search input,
+.proj-pkg__search select {
+  min-width: 12rem;
+  padding: 0.35rem 0.5rem;
+}
+
+.proj-pkg__fmt {
+  display: inline-block;
+  margin-right: 0.35rem;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: #555;
+  background: #eee;
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
 }

@@ -156,3 +156,24 @@ class GhesOrgSaveItem(BaseModel):
 
 class GhesOrgsSaveBody(BaseModel):
     organizations: list[GhesOrgSaveItem] = Field(default_factory=list)
+
+
+class AggregatedPackageRow(BaseModel):
+    format: str
+    name: str
+    version: str
+    imported_at: str | None = None
+    max_threat_level: float | None = None
+    organizations: list[str] = Field(default_factory=list)
+
+
+class ProjectPackagesListResponse(BaseModel):
+    collected_at: str | None = None
+    items: list[AggregatedPackageRow] = Field(default_factory=list)
+
+
+class ProjectPackagesSyncResult(BaseModel):
+    collected_at: str | None = None
+    org_count: int = 0
+    item_count: int = 0
+    items: list[AggregatedPackageRow] = Field(default_factory=list)

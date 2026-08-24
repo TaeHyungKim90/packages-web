@@ -8,6 +8,8 @@ import type {
   PackageRequestStatus,
   PackageRequestValidation,
   PackageType,
+  ProjectPackagesListResponse,
+  ProjectPackagesSyncResult,
   ProxyHealthResponse,
 } from "../types";
 
@@ -181,6 +183,34 @@ export async function saveGhesOrgs(
         })),
       })),
     }),
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+export async function fetchProjectPackages(params?: {
+  org?: string;
+  name?: string;
+  format?: string;
+}): Promise<ProjectPackagesListResponse> {
+  const search = new URLSearchParams();
+  if (params?.org?.trim()) search.set("org", params.org.trim());
+  if (params?.name?.trim()) search.set("name", params.name.trim());
+  if (params?.format?.trim()) search.set("format", params.format.trim());
+  const qs = search.toString();
+  const res = await apiFetch(`/api/project-packages${qs ? `?${qs}` : ""}`);
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+export async function syncProjectPackages(
+  org?: string,
+): Promise<ProjectPackagesSyncResult> {
+  const search = new URLSearchParams();
+  if (org?.trim()) search.set("org", org.trim());
+  const qs = search.toString();
+  const res = await apiFetch(`/api/project-packages/sync${qs ? `?${qs}` : ""}`, {
+    method: "POST",
   });
   if (!res.ok) throw new Error(await readError(res));
   return res.json();
