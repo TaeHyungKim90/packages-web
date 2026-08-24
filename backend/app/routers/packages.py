@@ -4,6 +4,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.deps import require_user
+from app.nexus_http import nexus_http_exception
 from app.schemas import PackageCheckResponse, PackageListResponse
 from app.services import nexus
 from app.services.session import SessionUser
@@ -51,10 +52,7 @@ async def check_package(
             continuation_token=continuation_token,
         )
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(
-            status_code=exc.response.status_code,
-            detail=f"Nexus API error: {exc.response.text[:500]}",
-        ) from exc
+        raise nexus_http_exception(exc) from exc
     except httpx.HTTPError as exc:
         raise HTTPException(
             status_code=502,
@@ -90,10 +88,7 @@ async def list_packages(
             continuation_token=continuation_token,
         )
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(
-            status_code=exc.response.status_code,
-            detail=f"Nexus API error: {exc.response.text[:500]}",
-        ) from exc
+        raise nexus_http_exception(exc) from exc
     except httpx.HTTPError as exc:
         raise HTTPException(
             status_code=502,

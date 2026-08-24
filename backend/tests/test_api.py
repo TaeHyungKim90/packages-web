@@ -2,9 +2,8 @@ from app.config import settings
 from app.deps import set_session_cookie
 from app.services.session import SessionUser
 from fastapi.testclient import TestClient
+import httpx
 from main import app
-
-client = TestClient(app)
 
 client = TestClient(app)
 
@@ -80,6 +79,19 @@ def test_check_rejects_unknown_format_when_authed():
         params={"format": "cargo", "name": "serde"},
     )
     assert response.status_code == 400
+
+
+def test_check_maps_nexus_401_to_502(monkeypatch):
+    async def _fake(**_kwargs):
+        request = httpx.Request("GET", "https://nexus.example/search")
+        response = httpx.Response(401, text="Unauthorized", request=request)
+        raise httpx.HTTPStatusError("401", request=request, response=response)
+
+    monkeypatch.setattr("app.routers.packages.nexus.check_package", _fake)
+    c = _authed_client()
+    response = c.get("/api/packages/check", params={"format": "pypi", "name": "uv"})
+    assert response.status_code == 502
+    assert "Nexus API error" in response.json()["detail"]
 
 
 def test_login_unconfigured_redirects_to_login(monkeypatch):

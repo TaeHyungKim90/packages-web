@@ -56,3 +56,19 @@ async def require_cicd_owner(
         status_code=403,
         detail="CICD 조직 owner만 패키지를 신청할 수 있습니다",
     )
+
+
+def can_view_orgs(login: str) -> bool:
+    expected = (settings.ghes_inventory_login or "sk-inc").strip().lower()
+    return login.strip().lower() == expected
+
+
+def require_sk_inc(
+    user: Annotated[SessionUser, Depends(require_user)],
+) -> SessionUser:
+    if can_view_orgs(user.login):
+        return user
+    raise HTTPException(
+        status_code=403,
+        detail="이 기능은 sk-inc 계정만 사용할 수 있습니다",
+    )

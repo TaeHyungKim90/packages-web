@@ -27,6 +27,7 @@ export interface AuthUser {
   name: string | null;
   avatar_url: string | null;
   can_request: boolean;
+  can_view_orgs: boolean;
 }
 
 export interface PackageRequestItem {
@@ -132,5 +133,22 @@ export interface ProxyHealthResponse {
   generated_at: string | null;
   vulnerabilities: ProxyHealthVulnerability[];
   licenses: ProxyHealthLicense[];
+}
+
+export interface GhesRepoItem {
+  name: string;
+  managed: boolean;
+  present: boolean;
+}
+
+export interface GhesOrgItem {
+  name: string;
+  managed: boolean;
+  present: boolean;
+  repos: GhesRepoItem[];
+}
+
+export interface GhesOrgsResponse {
+  organizations: GhesOrgItem[];
 }
 

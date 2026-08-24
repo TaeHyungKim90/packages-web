@@ -476,3 +476,33 @@ def test_proxy_health_success(monkeypatch):
     response = c.get("/api/proxy-health/nuget")
     assert response.status_code == 200
     assert response.json()["repository"] == "nuget-proxy-health"
+
+
+def test_proxy_health_maps_nexus_401_to_502(monkeypatch):
+    async def _fake(_eco: str) -> ProxyHealthResponse:
+        request = httpx.Request("GET", "https://nexus.example/health")
+        response = httpx.Response(401, text="Unauthorized", request=request)
+        raise httpx.HTTPStatusError("401", request=request, response=response)
+
+    monkeypatch.setattr(
+        "app.routers.proxy_health.fetch_proxy_health", _fake
+    )
+    c = _authed_client()
+    response = c.get("/api/proxy-health/pypi")
+    assert response.status_code == 502
+    assert "Nexus API error" in response.json()["detail"]
+
+
+def test_proxy_health_maps_nexus_403_to_502(monkeypatch):
+    async def _fake(_eco: str) -> ProxyHealthResponse:
+        request = httpx.Request("GET", "https://nexus.example/health")
+        response = httpx.Response(403, text="Forbidden", request=request)
+        raise httpx.HTTPStatusError("403", request=request, response=response)
+
+    monkeypatch.setattr(
+        "app.routers.proxy_health.fetch_proxy_health", _fake
+    )
+    c = _authed_client()
+    response = c.get("/api/proxy-health/pypi")
+    assert response.status_code == 502
+    assert "Nexus API error" in response.json()["detail"]

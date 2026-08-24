@@ -134,6 +134,15 @@ Nexus `pypi-proxy-health` / `npm-proxy-health` / `nuget-proxy-health`의 취약�
 | `GITHUB_TOKEN` / `GITHUB_ORG` / `GITHUB_BASE_BRANCH` | GitOps 봇 PAT·조직 |
 | `TRANSFER_AUTO_MERGE` | CI 통과 후 auto-merge 사용 여부 |
 
+## GHES 조직 목록
+
+조직·레포 목록과 관리 대상(`managed`) 여부는 [`config/ghes-orgs.yaml`](config/ghes-orgs.yaml)에 저장합니다.
+
+- 로그인명이 `sk-inc`인 계정만 **GHES 조직** 탭(`/orgs`)을 볼 수 있습니다.
+- 탭은 GHES API로 조직·레포를 조회한 뒤 YAML의 `managed` 플래그와 병합해 표시합니다.
+- 저장 시 YAML을 디스크에 씁니다. (컨테이너가 read-only면 `config/`를 쓰기 가능하게 마운트해야 합니다.)
+- 앱의 패키지 신청 대상 조직은 계속 `.env`의 `GITHUB_ORG`를 사용합니다.
+
 ## 구현 단계
 
 | 단계 | 내용 | 상태 |

@@ -4,6 +4,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Path
 
 from app.deps import require_user
+from app.nexus_http import nexus_http_exception
 from app.schemas import ProxyHealthResponse
 from app.services.nexus_health import ProxyHealthUnavailable, fetch_proxy_health
 from app.services.session import SessionUser
@@ -34,13 +35,7 @@ async def get_proxy_health(_user: CurrentUser, eco: EcoPath):
     except ProxyHealthUnavailable as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except httpx.HTTPStatusError as exc:
-        status = exc.response.status_code
-        if status in {301, 302, 303, 307, 308}:
-            status = 502
-        raise HTTPException(
-            status_code=status,
-            detail=f"Nexus API error: {exc.response.text[:500]}",
-        ) from exc
+        raise nexus_http_exception(exc) from exc
     except httpx.HTTPError as exc:
         raise HTTPException(
             status_code=502,

@@ -9,11 +9,18 @@ const ECOSYSTEMS = [
 
 type MenuId = "request" | "vuln";
 
-export default function Header({ canRequest = false }: { canRequest?: boolean }) {
+export default function Header({
+  canRequest = false,
+  canViewOrgs = false,
+}: {
+  canRequest?: boolean;
+  canViewOrgs?: boolean;
+}) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const requestActive = pathname.startsWith("/request");
   const vulnActive = pathname.startsWith("/vuln");
+  const orgsActive = pathname.startsWith("/orgs");
   const [openMenu, setOpenMenu] = useState<MenuId | null>(null);
 
   useEffect(() => {
@@ -86,6 +93,18 @@ export default function Header({ canRequest = false }: { canRequest?: boolean })
             </li>
           ))}
         </Dropdown>
+        {canViewOrgs && (
+          <li className="header-nav__item">
+            <NavLink
+              to="/orgs"
+              className={({ isActive }) =>
+                `header-nav__link${isActive || orgsActive ? " header-nav__link--active" : ""}`
+              }
+            >
+              GHES 조직
+            </NavLink>
+          </li>
+        )}
       </ul>
     </nav>
   );

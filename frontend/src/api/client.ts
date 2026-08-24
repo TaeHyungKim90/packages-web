@@ -1,6 +1,8 @@
 import type {
   AuthUser,
   CheckParams,
+  GhesOrgItem,
+  GhesOrgsResponse,
   PackageCheckResponse,
   PackageRequestResult,
   PackageRequestStatus,
@@ -153,6 +155,33 @@ export async function fetchProxyHealth(
   eco: RequestEco,
 ): Promise<ProxyHealthResponse> {
   const res = await apiFetch(`/api/proxy-health/${eco}`);
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+export async function fetchGhesOrgs(): Promise<GhesOrgsResponse> {
+  const res = await apiFetch("/api/ghes-orgs");
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+export async function saveGhesOrgs(
+  organizations: GhesOrgItem[],
+): Promise<GhesOrgsResponse> {
+  const res = await apiFetch("/api/ghes-orgs", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      organizations: organizations.map((o) => ({
+        name: o.name,
+        managed: o.managed,
+        repos: o.repos.map((r) => ({
+          name: r.name,
+          managed: r.managed,
+        })),
+      })),
+    }),
+  });
   if (!res.ok) throw new Error(await readError(res));
   return res.json();
 }

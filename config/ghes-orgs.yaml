@@ -1,0 +1,233 @@
+# GHES 조직 · 레포 인벤토리
+# managed: 관리 대상 여부 (UI에서 저장)
+# GET /api/ghes-orgs 는 GHES API와 이 파일을 병합합니다.
+
+organizations:
+- name: AAC
+  managed: true
+  repos:
+  - name: aac-backend
+    managed: false
+  - name: aac-frontend
+    managed: false
+  - name: aac-k8s-manifests
+    managed: false
+  - name: databricks
+    managed: false
+- name: AAP
+  managed: true
+  repos:
+  - name: databricks
+    managed: false
+- name: ABD
+  managed: true
+  repos:
+  - name: backend-admin
+    managed: false
+  - name: backend-agent
+    managed: false
+  - name: backend-gateway
+    managed: false
+  - name: backend-llm-gateway
+    managed: false
+  - name: databricks
+    managed: false
+  - name: frontend
+    managed: false
+  - name: infra-phoenix
+    managed: false
+  - name: infra-prefect
+    managed: false
+  - name: shared-infra
+    managed: false
+  - name: test-status-dashboard
+    managed: false
+- name: ACM
+  managed: true
+  repos:
+  - name: databricks
+    managed: false
+- name: actions
+  managed: false
+  repos:
+  - name: cache
+    managed: false
+  - name: checkout
+    managed: false
+  - name: configure-pages
+    managed: false
+  - name: create-release
+    managed: false
+  - name: delete-package-versions
+    managed: false
+  - name: deploy-pages
+    managed: false
+  - name: download-artifact
+    managed: false
+  - name: github-script
+    managed: false
+  - name: jekyll-build-pages
+    managed: false
+  - name: labeler
+    managed: false
+  - name: setup-dotnet
+    managed: false
+  - name: setup-go
+    managed: false
+  - name: setup-java
+    managed: false
+  - name: setup-node
+    managed: false
+  - name: setup-python
+    managed: false
+  - name: stale
+    managed: false
+  - name: starter-workflows
+    managed: false
+  - name: upload-artifact
+    managed: false
+  - name: upload-pages-artifact
+    managed: false
+- name: ACX
+  managed: true
+  repos:
+  - name: pdartap
+    managed: false
+  - name: python
+    managed: false
+  - name: scan-action
+    managed: false
+- name: ADT
+  managed: true
+  repos:
+  - name: adt
+    managed: false
+  - name: adt_dbx
+    managed: false
+  - name: databricks
+    managed: false
+- name: AEX
+  managed: true
+  repos:
+  - name: aex-backend
+    managed: false
+  - name: aex-backend-bk
+    managed: false
+  - name: aex-frontend
+    managed: false
+  - name: aex-frontend-validate
+    managed: false
+  - name: aex-k8s-manifests
+    managed: false
+  - name: aex-kube-manifests
+    managed: false
+  - name: bk-aex-backend
+    managed: false
+  - name: bk-aex-frontend
+    managed: false
+  - name: databricks
+    managed: false
+  - name: test-file
+    managed: false
+- name: AIP
+  managed: true
+  repos:
+  - name: AIP_AGENT_BACKEND_PYTHON
+    managed: false
+  - name: AIP_AGENT_FRONTEND_REACT
+    managed: false
+  - name: AIP_APP_DOTNET
+    managed: false
+  - name: AIP_BATCH
+    managed: false
+  - name: AIP_DATABRICKS_PYTHON
+    managed: false
+  - name: AIP_DOC_VIEWER
+    managed: false
+  - name: AIP_PUB
+    managed: false
+  - name: databricks
+    managed: false
+  - name: DOCS
+    managed: false
+- name: AMI
+  managed: true
+  repos:
+  - name: ami-backend
+    managed: false
+  - name: ami-frontend
+    managed: false
+  - name: databricks
+    managed: false
+- name: ARM
+  managed: true
+  repos:
+  - name: databricks
+    managed: false
+- name: ASY
+  managed: true
+  repos:
+  - name: databricks
+    managed: false
+  - name: faq
+    managed: false
+  - name: pay
+    managed: false
+- name: aws-actions
+  managed: false
+  repos:
+  - name: amazon-ecr-login
+    managed: false
+  - name: configure-aws-credentials
+    managed: false
+- name: CICD
+  managed: true
+  repos:
+  - name: npmPackages
+    managed: true
+  - name: nugetPackages
+    managed: true
+  - name: packages-web
+    managed: false
+  - name: pypiPackages
+    managed: true
+- name: CWD
+  managed: true
+  repos:
+  - name: cwd-workflow
+    managed: false
+- name: docker
+  managed: false
+  repos:
+  - name: build-push-action
+    managed: false
+  - name: login-action
+    managed: false
+  - name: metadata-action
+    managed: false
+  - name: setup-buildx-action
+    managed: false
+  - name: setup-qemu-action
+    managed: false
+- name: github
+  managed: false
+  repos:
+  - name: codeql-action
+    managed: false
+  - name: dependabot-action
+    managed: false
+- name: valuesplay
+  managed: false
+  repos:
+  - name: npmPackages
+    managed: false
+  - name: nugetPackages
+    managed: false
+  - name: packages
+    managed: false
+  - name: py_tpl
+    managed: false
+  - name: pypiPackages
+    managed: false
+  - name: workflow
+    managed: false

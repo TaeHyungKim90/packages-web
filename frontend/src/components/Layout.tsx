@@ -66,7 +66,10 @@ export default function Layout({ health, auth, children }: Props) {
           </div>
         </div>
         {!isLogin && auth.isAuthenticated && (
-          <Header canRequest={Boolean(auth.user?.can_request)} />
+          <Header
+            canRequest={Boolean(auth.user?.can_request)}
+            canViewOrgs={Boolean(auth.user?.can_view_orgs)}
+          />
         )}
       </header>
       <main className="layout__main">{children}</main>

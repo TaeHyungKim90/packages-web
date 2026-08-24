@@ -2,6 +2,7 @@ import { Route, Routes } from "react-router";
 import {
   RedirectIfAuthed,
   RequireAuth,
+  RequireOrgsAccess,
   RequireRequestAccess,
   RootRedirect,
 } from "./components/AuthGate";
@@ -9,6 +10,7 @@ import Layout from "./components/Layout";
 import { useAppHealth } from "./hooks/useAppHealth";
 import { useAuth } from "./hooks/useAuth";
 import LoginPage from "./pages/LoginPage";
+import GhesOrgsPage from "./pages/GhesOrgsPage";
 import PackageRequestPage from "./pages/PackageRequestPage";
 import PackageSearchPage from "./pages/PackageSearchPage";
 import ProxyHealthPage from "./pages/ProxyHealthPage";
@@ -36,6 +38,9 @@ export default function App() {
           <Route path="/request/pypi" element={<PackageRequestPage packageType="pypi" />} />
           <Route path="/request/npm" element={<PackageRequestPage packageType="npm" />} />
           <Route path="/request/nuget" element={<PackageRequestPage packageType="nuget" />} />
+        </Route>
+        <Route element={<RequireOrgsAccess auth={auth} />}>
+          <Route path="/orgs" element={<GhesOrgsPage />} />
         </Route>
       </Routes>
     </Layout>

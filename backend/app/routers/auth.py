@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import RedirectResponse
 
 from app.config import settings
-from app.deps import clear_session_cookie, require_user, set_session_cookie
+from app.deps import can_view_orgs, clear_session_cookie, require_user, set_session_cookie
 from app.schemas import UserResponse
 from app.services import ghes_oauth, github
 from app.services.session import SessionUser, sign_oauth_state, verify_oauth_state
@@ -81,4 +81,5 @@ async def me(request: Request) -> UserResponse:
         name=user.name,
         avatar_url=user.avatar_url,
         can_request=await github.is_org_owner(user.login),
+        can_view_orgs=can_view_orgs(user.login),
     )

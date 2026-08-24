@@ -263,6 +263,68 @@ async def is_org_owner(login: str) -> bool:
     return role == "admin" and state == "active"
 
 
+async def list_all_organizations() -> list[str]:
+    """Return all org logins visible to GITHUB_TOKEN (paginated)."""
+    headers = _headers()
+    names: list[str] = []
+    since = 0
+    async with httpx.AsyncClient() as client:
+        while True:
+            response = await client.get(
+                _api("/organizations"),
+                params={"per_page": 100, "since": since},
+                headers=headers,
+                timeout=60.0,
+            )
+            if response.status_code >= 400:
+                raise GitHubError(
+                    f"list organizations failed: {response.text[:300]}",
+                    status_code=response.status_code,
+                )
+            batch = response.json()
+            if not isinstance(batch, list) or not batch:
+                break
+            for item in batch:
+                if isinstance(item, dict) and item.get("login"):
+                    names.append(str(item["login"]))
+                oid = item.get("id") if isinstance(item, dict) else None
+                if isinstance(oid, int):
+                    since = max(since, oid)
+            if len(batch) < 100:
+                break
+    return names
+
+
+async def list_org_repos(org: str) -> list[str]:
+    """Return repository names for an organization (paginated)."""
+    headers = _headers()
+    names: list[str] = []
+    page = 1
+    async with httpx.AsyncClient() as client:
+        while True:
+            response = await client.get(
+                _api(f"/orgs/{org}/repos"),
+                params={"per_page": 100, "page": page, "type": "all"},
+                headers=headers,
+                timeout=60.0,
+            )
+            if response.status_code >= 400:
+                raise GitHubError(
+                    f"list repos for {org} failed: {response.text[:300]}",
+                    status_code=response.status_code,
+                )
+            batch = response.json()
+            if not isinstance(batch, list) or not batch:
+                break
+            for item in batch:
+                if isinstance(item, dict) and item.get("name"):
+                    names.append(str(item["name"]))
+            if len(batch) < 100:
+                break
+            page += 1
+    return names
+
+
 async def merge_pull(
     owner: str,
     repo: str,

@@ -33,6 +33,7 @@ class UserResponse(BaseModel):
     name: str | None = None
     avatar_url: str | None = None
     can_request: bool = False
+    can_view_orgs: bool = False
 
 
 class PackageRequestItem(BaseModel):
@@ -123,3 +124,35 @@ class ProxyHealthResponse(BaseModel):
     generated_at: str | None = None
     vulnerabilities: list[ProxyHealthVulnerability] = Field(default_factory=list)
     licenses: list[ProxyHealthLicense] = Field(default_factory=list)
+
+
+class GhesRepoItem(BaseModel):
+    name: str
+    managed: bool = False
+    present: bool = True
+
+
+class GhesOrgItem(BaseModel):
+    name: str
+    managed: bool = False
+    present: bool = True
+    repos: list[GhesRepoItem] = Field(default_factory=list)
+
+
+class GhesOrgsResponse(BaseModel):
+    organizations: list[GhesOrgItem] = Field(default_factory=list)
+
+
+class GhesRepoSaveItem(BaseModel):
+    name: str
+    managed: bool = False
+
+
+class GhesOrgSaveItem(BaseModel):
+    name: str
+    managed: bool = False
+    repos: list[GhesRepoSaveItem] = Field(default_factory=list)
+
+
+class GhesOrgsSaveBody(BaseModel):
+    organizations: list[GhesOrgSaveItem] = Field(default_factory=list)
