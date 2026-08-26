@@ -1,7 +1,7 @@
 # GHES lock 파일 수집 스냅샷 (POST /api/project-packages/sync)
 # aggregated: GET 목록용 캐시 (imported_at, max_threat_level)
 
-collected_at: '2026-08-24T08:26:54.608526+00:00'
+collected_at: '2026-08-26T00:32:24.726657+00:00'
 projects:
 - org: AAC
   repos:
@@ -3566,7 +3566,7 @@ projects:
     lock_files:
     - path: backend/uv.lock
       format: pypi
-      sha: b9d48b1fb2404ee29c669d690d36b14a655d6cb3
+      sha: 1885260fd3047fb29ab1c92257b497a74056d507
       packages:
       - name: adt
         version: 0.1.0
@@ -3609,7 +3609,7 @@ projects:
       - name: charset-normalizer
         version: 3.4.7
       - name: click
-        version: 8.3.2
+        version: 8.4.2
       - name: click-didyoumean
         version: 0.3.1
       - name: click-plugins
@@ -3621,7 +3621,7 @@ projects:
       - name: coverage
         version: 7.14.1
       - name: cryptography
-        version: 48.0.1
+        version: 50.0.0
       - name: distro
         version: 1.9.0
       - name: dnspython
@@ -3775,7 +3775,7 @@ projects:
       - name: pyjwt
         version: 2.13.0
       - name: pypdf
-        version: 6.12.0
+        version: 6.14.2
       - name: pytest
         version: 9.0.3
       - name: pytest-asyncio
@@ -3866,7 +3866,7 @@ projects:
       packages: []
     - path: frontend/package-lock.json
       format: npm
-      sha: 4b166f73bf0ad5dd400e3098d3b62addc54752bb
+      sha: 8c00c9440b79f3b2bd54ce4c588f426a7d72a956
       packages:
       - name: '@adobe/css-tools'
         version: 4.5.0
@@ -4447,17 +4447,17 @@ projects:
       - name: balanced-match
         version: 4.0.4
       - name: baseline-browser-mapping
-        version: 2.10.31
+        version: 2.11.0
       - name: bidi-js
         version: 1.0.3
       - name: body-parser
         version: 2.2.2
       - name: brace-expansion
-        version: 5.0.6
+        version: 5.0.8
       - name: braces
         version: 3.0.3
       - name: browserslist
-        version: 4.28.2
+        version: 4.28.7
       - name: bundle-name
         version: 4.1.0
       - name: bytes
@@ -4469,7 +4469,7 @@ projects:
       - name: callsites
         version: 3.1.0
       - name: caniuse-lite
-        version: 1.0.30001793
+        version: 1.0.30001809
       - name: ccount
         version: 2.0.1
       - name: chai
@@ -4593,7 +4593,7 @@ projects:
       - name: ee-first
         version: 1.1.1
       - name: electron-to-chromium
-        version: 1.5.360
+        version: 1.5.412
       - name: emoji-regex
         version: 10.6.0
       - name: emoji-regex
@@ -4691,7 +4691,7 @@ projects:
       - name: fast-string-width
         version: 3.0.2
       - name: fast-uri
-        version: 3.1.2
+        version: 3.1.5
       - name: fast-wrap-ansi
         version: 0.2.0
       - name: fastq
@@ -4793,7 +4793,7 @@ projects:
       - name: hermes-parser
         version: 0.25.1
       - name: hono
-        version: 4.12.25
+        version: 4.12.34
       - name: html-encoding-sniffer
         version: 6.0.0
       - name: html-url-attributes
@@ -5109,7 +5109,7 @@ projects:
       - name: node-fetch
         version: 3.3.2
       - name: node-releases
-        version: 2.0.45
+        version: 2.0.53
       - name: npm-run-path
         version: 4.0.1
       - name: npm-run-path
@@ -11842,7 +11842,7 @@ projects:
     lock_files:
     - path: backend/uv.lock
       format: pypi
-      sha: a3cf7be2ad2160eb0f8d2f45e33d0ede1deb744f
+      sha: b85b7a663f1be3e178b62c137384b312784dc3ea
       packages:
       - name: aiosqlite
         version: 0.22.1
@@ -11998,6 +11998,8 @@ projects:
         version: 0.4.2
       - name: langsmith
         version: 0.9.4
+      - name: ldap3
+        version: 2.9.1
       - name: lxml
         version: 6.1.1
       - name: magika
@@ -13314,7 +13316,7 @@ projects:
     lock_files:
     - path: uv.lock
       format: pypi
-      sha: 4f8b2e547864bc15555b72f85715b4c0299db919
+      sha: c280f817506f617ef1ef49cddaadb18dbd4e0caf
       packages:
       - name: attrs
         version: 26.1.0
@@ -13333,7 +13335,7 @@ projects:
       - name: packaging
         version: '26.2'
       - name: pip
-        version: 26.1.2
+        version: 26.2.1
       - name: pluggy
         version: 1.6.0
       - name: pygments
@@ -16084,7 +16086,7 @@ aggregated:
 - format: npm
   name: '@isaacs/fs-minipass'
   version: 4.0.1
-  imported_at: null
+  imported_at: '2026-08-25T01:45:30.356000+00:00'
   max_threat_level: null
   organizations:
   - ACX
@@ -20232,7 +20234,6 @@ aggregated:
   imported_at: '2026-05-22T06:55:25.783000+00:00'
   max_threat_level: 8.7
   organizations:
-  - ADT
   - AEX
 - format: npm
   name: baseline-browser-mapping
@@ -20255,6 +20256,7 @@ aggregated:
   imported_at: '2026-08-24T04:17:11.676000+00:00'
   max_threat_level: null
   organizations:
+  - ADT
   - CICD
 - format: npm
   name: better-npm-audit
@@ -20404,13 +20406,19 @@ aggregated:
   max_threat_level: 8.7
   organizations:
   - AAC
-  - ADT
   - AEX
   - ASY
 - format: npm
   name: brace-expansion
+  version: 5.0.8
+  imported_at: '2026-08-24T04:18:01.665000+00:00'
+  max_threat_level: 7.5
+  organizations:
+  - ADT
+- format: npm
+  name: brace-expansion
   version: 5.0.9
-  imported_at: null
+  imported_at: '2026-08-25T01:44:41.530000+00:00'
   max_threat_level: null
   organizations:
   - ACX
@@ -20444,7 +20452,6 @@ aggregated:
   max_threat_level: 7.5
   organizations:
   - AAC
-  - ADT
   - AEX
   - AIP
   - ASY
@@ -20454,6 +20461,7 @@ aggregated:
   imported_at: '2026-08-24T04:18:44.685000+00:00'
   max_threat_level: null
   organizations:
+  - ADT
   - CICD
 - format: npm
   name: buffer
@@ -20591,7 +20599,6 @@ aggregated:
   imported_at: '2026-05-22T07:03:17.146000+00:00'
   max_threat_level: null
   organizations:
-  - ADT
   - AEX
   - ASY
 - format: npm
@@ -20601,6 +20608,13 @@ aggregated:
   max_threat_level: null
   organizations:
   - CICD
+- format: npm
+  name: caniuse-lite
+  version: 1.0.30001809
+  imported_at: '2026-08-24T04:21:00.100000+00:00'
+  max_threat_level: null
+  organizations:
+  - ADT
 - format: npm
   name: canvg
   version: 3.0.11
@@ -20742,7 +20756,7 @@ aggregated:
 - format: npm
   name: chownr
   version: 3.0.0
-  imported_at: null
+  imported_at: '2026-08-25T01:44:48.115000+00:00'
   max_threat_level: null
   organizations:
   - ACX
@@ -21743,7 +21757,6 @@ aggregated:
   imported_at: '2026-05-22T07:27:55.060000+00:00'
   max_threat_level: null
   organizations:
-  - ADT
   - AEX
 - format: npm
   name: electron-to-chromium
@@ -21767,6 +21780,13 @@ aggregated:
   max_threat_level: null
   organizations:
   - CICD
+- format: npm
+  name: electron-to-chromium
+  version: 1.5.412
+  imported_at: '2026-08-24T04:23:31.580000+00:00'
+  max_threat_level: null
+  organizations:
+  - ADT
 - format: npm
   name: emoji-regex
   version: 10.6.0
@@ -22424,7 +22444,7 @@ aggregated:
   name: exceljs
   version: 4.4.0
   imported_at: '2026-05-22T07:46:32.537000+00:00'
-  max_threat_level: null
+  max_threat_level: 9.4
   organizations:
   - AAC
   - AEX
@@ -22590,18 +22610,12 @@ aggregated:
   - ADT
 - format: npm
   name: fast-uri
-  version: 3.1.2
-  imported_at: '2026-05-22T07:48:10.199000+00:00'
-  max_threat_level: 7.5
-  organizations:
-  - ADT
-- format: npm
-  name: fast-uri
   version: 3.1.5
   imported_at: '2026-08-24T04:23:47.275000+00:00'
-  max_threat_level: null
+  max_threat_level: 7.5
   organizations:
   - ACX
+  - ADT
 - format: npm
   name: fast-wrap-ansi
   version: 0.2.0
@@ -23386,9 +23400,9 @@ aggregated:
   - ASY
 - format: npm
   name: hono
-  version: 4.12.25
-  imported_at: '2026-06-17T07:38:23.759000+00:00'
-  max_threat_level: 8.7
+  version: 4.12.34
+  imported_at: '2026-08-24T04:24:24.702000+00:00'
+  max_threat_level: null
   organizations:
   - ADT
 - format: npm
@@ -24261,7 +24275,7 @@ aggregated:
 - format: npm
   name: js-yaml
   version: 4.3.1
-  imported_at: null
+  imported_at: '2026-08-25T09:03:32.585000+00:00'
   max_threat_level: null
   organizations:
   - ACX
@@ -25712,7 +25726,7 @@ aggregated:
 - format: npm
   name: minizlib
   version: 3.1.0
-  imported_at: null
+  imported_at: '2026-08-25T01:45:02.232000+00:00'
   max_threat_level: null
   organizations:
   - ACX
@@ -25884,7 +25898,6 @@ aggregated:
   imported_at: '2026-05-22T09:09:25.789000+00:00'
   max_threat_level: null
   organizations:
-  - ADT
   - AEX
 - format: npm
   name: node-releases
@@ -25908,6 +25921,13 @@ aggregated:
   max_threat_level: null
   organizations:
   - CICD
+- format: npm
+  name: node-releases
+  version: 2.0.53
+  imported_at: '2026-08-24T04:28:16.895000+00:00'
+  max_threat_level: null
+  organizations:
+  - ADT
 - format: npm
   name: normalize-path
   version: 3.0.0
@@ -28411,7 +28431,7 @@ aggregated:
 - format: npm
   name: tar
   version: 7.5.22
-  imported_at: null
+  imported_at: '2026-08-25T01:45:14.268000+00:00'
   max_threat_level: null
   organizations:
   - ACX
@@ -29688,7 +29708,7 @@ aggregated:
 - format: npm
   name: yallist
   version: 5.0.0
-  imported_at: null
+  imported_at: '2026-08-25T01:45:22.441000+00:00'
   max_threat_level: null
   organizations:
   - ACX
@@ -30521,7 +30541,6 @@ aggregated:
   max_threat_level: 7.2
   organizations:
   - ABD
-  - ADT
 - format: pypi
   name: click
   version: 8.4.0
@@ -30537,6 +30556,7 @@ aggregated:
   imported_at: '2026-06-26T09:27:50.456000+00:00'
   max_threat_level: null
   organizations:
+  - ADT
   - AMI
   - ASY
   - CICD
@@ -30659,18 +30679,18 @@ aggregated:
   - AEX
 - format: pypi
   name: cryptography
-  version: 48.0.1
-  imported_at: '2026-06-17T07:32:46.115000+00:00'
-  max_threat_level: 8.7
-  organizations:
-  - ADT
-- format: pypi
-  name: cryptography
   version: 49.0.0
   imported_at: '2026-06-22T01:44:46.271000+00:00'
   max_threat_level: 8.2
   organizations:
   - ASY
+- format: pypi
+  name: cryptography
+  version: 50.0.0
+  imported_at: '2026-08-11T10:00:56.852000+00:00'
+  max_threat_level: null
+  organizations:
+  - ADT
 - format: pypi
   name: dateparser
   version: 1.4.0
@@ -31854,6 +31874,7 @@ aggregated:
   max_threat_level: null
   organizations:
   - ABD
+  - ASY
 - format: pypi
   name: lia-web
   version: 0.3.1
@@ -32708,9 +32729,9 @@ aggregated:
   - AMI
 - format: pypi
   name: pip
-  version: 26.1.2
-  imported_at: '2026-06-11T07:31:11.399000+00:00'
-  max_threat_level: 7.8
+  version: 26.2.1
+  imported_at: '2026-08-24T07:30:44.291000+00:00'
+  max_threat_level: null
   organizations:
   - CICD
 - format: pypi
@@ -33119,9 +33140,9 @@ aggregated:
   - ASY
 - format: pypi
   name: pypdf
-  version: 6.12.0
-  imported_at: '2026-06-17T07:32:57.255000+00:00'
-  max_threat_level: 7.5
+  version: 6.14.2
+  imported_at: '2026-07-14T06:11:42.490000+00:00'
+  max_threat_level: 4.8
   organizations:
   - ADT
 - format: pypi
