@@ -38,7 +38,7 @@ def test_project_packages_get_from_cache(monkeypatch):
         raise AssertionError("GET must not call proxy-health")
 
     monkeypatch.setattr(
-        "app.services.project_packages.fetch_proxy_health", _health
+        "app.services.project_packages.ensure_all_proxy_health_cached", _health
     )
     monkeypatch.setattr(
         "app.services.project_packages.load_snapshot_cached",

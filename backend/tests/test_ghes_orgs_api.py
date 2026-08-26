@@ -3,6 +3,7 @@ from app.deps import set_session_cookie
 from app.schemas import GhesOrgsResponse
 from app.services.ghes_inventory import InventoryOrg, InventoryRepo
 from app.services.session import SessionUser
+from app.services.store_orgs import load_orgs, save_orgs
 from fastapi.testclient import TestClient
 from main import app
 
@@ -35,9 +36,18 @@ def test_ghes_orgs_forbidden_for_other_user():
     assert response.status_code == 403
 
 
-def test_ghes_orgs_ok_for_sk_inc(monkeypatch):
-    async def _fake():
-        return [
+def test_ghes_orgs_get_from_db_only(monkeypatch):
+    calls = {"live": 0}
+
+    async def _live():
+        calls["live"] += 1
+        raise AssertionError("GET must not call GHES")
+
+    monkeypatch.setattr(
+        "app.services.ghes_inventory.fetch_live_inventory", _live
+    )
+    save_orgs(
+        [
             InventoryOrg(
                 name="CICD",
                 managed=True,
@@ -46,10 +56,8 @@ def test_ghes_orgs_ok_for_sk_inc(monkeypatch):
                     InventoryRepo(name="pypiPackages", managed=True, present=True)
                 ],
             )
-        ]
-
-    monkeypatch.setattr(
-        "app.routers.ghes_inventory.ghes_inventory.build_inventory", _fake
+        ],
+        touch_synced_at=True,
     )
     c = _authed("sk-inc")
     response = c.get("/api/ghes-orgs")
@@ -57,29 +65,16 @@ def test_ghes_orgs_ok_for_sk_inc(monkeypatch):
     body = GhesOrgsResponse.model_validate(response.json())
     assert body.organizations[0].name == "CICD"
     assert body.organizations[0].managed is True
+    assert body.synced_at is not None
+    assert calls["live"] == 0
 
 
-def test_ghes_orgs_put_saves(monkeypatch, tmp_path):
-    yaml_path = tmp_path / "ghes-orgs.yaml"
-    monkeypatch.setattr(
-        "app.services.ghes_inventory.settings.ghes_orgs_yaml_path",
-        str(yaml_path),
-    )
-
-    async def _fake():
-        return [
-            InventoryOrg(
-                name="CICD",
-                managed=True,
-                present=True,
-                repos=[
-                    InventoryRepo(name="pypiPackages", managed=True, present=True)
-                ],
-            )
-        ]
+def test_ghes_orgs_put_saves_without_live(monkeypatch):
+    async def _live():
+        raise AssertionError("PUT must not call GHES")
 
     monkeypatch.setattr(
-        "app.routers.ghes_inventory.ghes_inventory.build_inventory", _fake
+        "app.services.ghes_inventory.fetch_live_inventory", _live
     )
     c = _authed("sk-inc")
     response = c.put(
@@ -95,10 +90,36 @@ def test_ghes_orgs_put_saves(monkeypatch, tmp_path):
         },
     )
     assert response.status_code == 200
-    assert yaml_path.is_file()
-    text = yaml_path.read_text(encoding="utf-8")
-    assert "CICD" in text
-    assert "managed: true" in text
+    saved = load_orgs()
+    assert saved[0].name == "CICD"
+    assert saved[0].managed is True
+    assert saved[0].repos[0].name == "pypiPackages"
+
+
+def test_ghes_orgs_sync_calls_ghes(monkeypatch):
+    async def _fake_build():
+        return [
+            InventoryOrg(
+                name="CICD",
+                managed=False,
+                present=True,
+                repos=[
+                    InventoryRepo(name="pypiPackages", managed=False, present=True)
+                ],
+            )
+        ]
+
+    monkeypatch.setattr(
+        "app.routers.ghes_inventory.ghes_inventory.build_inventory",
+        _fake_build,
+    )
+    c = _authed("sk-inc")
+    response = c.post("/api/ghes-orgs/sync")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["organizations"][0]["name"] == "CICD"
+    assert body["synced_at"] is not None
+    assert load_orgs()[0].name == "CICD"
 
 
 def test_me_can_view_orgs(monkeypatch):

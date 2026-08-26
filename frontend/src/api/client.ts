@@ -167,6 +167,12 @@ export async function fetchGhesOrgs(): Promise<GhesOrgsResponse> {
   return res.json();
 }
 
+export async function syncGhesOrgs(): Promise<GhesOrgsResponse> {
+  const res = await apiFetch("/api/ghes-orgs/sync", { method: "POST" });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
 export async function saveGhesOrgs(
   organizations: GhesOrgItem[],
 ): Promise<GhesOrgsResponse> {

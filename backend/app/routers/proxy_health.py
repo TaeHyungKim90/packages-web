@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Path
 from app.deps import require_user
 from app.nexus_http import nexus_http_exception
 from app.schemas import ProxyHealthResponse
-from app.services.nexus_health import ProxyHealthUnavailable, fetch_proxy_health
+from app.services.nexus_health import ProxyHealthUnavailable
+from app.services.proxy_health_store import get_proxy_health_cached
 from app.services.session import SessionUser
 
 router = APIRouter(prefix="/proxy-health", tags=["proxy-health"])
@@ -31,7 +32,7 @@ def _require_eco(eco: str) -> str:
 async def get_proxy_health(_user: CurrentUser, eco: EcoPath):
     key = _require_eco(eco)
     try:
-        return await fetch_proxy_health(key)
+        return await get_proxy_health_cached(key)
     except ProxyHealthUnavailable as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except httpx.HTTPStatusError as exc:

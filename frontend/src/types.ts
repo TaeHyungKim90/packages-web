@@ -149,6 +149,7 @@ export interface GhesOrgItem {
 }
 
 export interface GhesOrgsResponse {
+  synced_at: string | null;
   organizations: GhesOrgItem[];
 }
 

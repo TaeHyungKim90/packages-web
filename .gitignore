@@ -27,3 +27,8 @@ Thumbs.db
 
 # Local reference materials
 refs/
+
+# SQLite cache (GHES orgs, project packages, proxy health)
+config/*.sqlite3
+config/*.sqlite3-*
+config/ghes-*.yaml.bak

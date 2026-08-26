@@ -1,4 +1,7 @@
+from contextlib import asynccontextmanager
+
 from app.config import settings
+from app.db import init_schema, migrate_yaml_if_needed
 from app.routers import (
     auth,
     ghes_inventory,
@@ -10,7 +13,15 @@ from app.routers import (
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="packages-web", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    init_schema()
+    migrate_yaml_if_needed()
+    yield
+
+
+app = FastAPI(title="packages-web", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

@@ -140,6 +140,7 @@ class GhesOrgItem(BaseModel):
 
 
 class GhesOrgsResponse(BaseModel):
+    synced_at: str | None = None
     organizations: list[GhesOrgItem] = Field(default_factory=list)
 
 

@@ -94,11 +94,9 @@ class Settings(BaseSettings):
     github_org: str = "CICD"
     github_base_branch: str = "main"
     transfer_auto_merge: bool = True
-    # Empty = resolve to <repo>/config/ghes-orgs.yaml
-    ghes_orgs_yaml_path: str = ""
     ghes_inventory_login: str = "sk-inc"
-    ghes_project_packages_yaml_path: str = ""
-    ghes_package_vulnerabilities_yaml_path: str = ""
+    # Empty = <repo>/config/packages-web.sqlite3
+    packages_web_db_path: str = ""
 
     @field_validator("cors_origins", mode="before")
     @classmethod

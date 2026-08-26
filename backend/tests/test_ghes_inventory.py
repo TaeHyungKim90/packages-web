@@ -1,12 +1,10 @@
-from pathlib import Path
-
 from app.services.ghes_inventory import (
-    StoredOrg,
-    StoredRepo,
+    _parse_org,
     load_yaml,
     merge_with_yaml,
-    save_yaml,
 )
+from app.services.ghes_models import StoredOrg, StoredRepo
+from app.services.store_orgs import load_orgs, save_orgs
 
 
 def test_merge_applies_managed_and_keeps_orphans():
@@ -39,35 +37,31 @@ def test_merge_applies_managed_and_keeps_orphans():
     assert by_name["OnlyYaml"].present is False
 
 
-def test_load_yaml_accepts_legacy_string_repos(tmp_path: Path):
-    path = tmp_path / "orgs.yaml"
-    path.write_text(
-        "organizations:\n"
-        "  - name: CICD\n"
-        "    repos:\n"
-        "      - pypiPackages\n",
-        encoding="utf-8",
+def test_parse_org_accepts_legacy_string_repos():
+    org = _parse_org(
+        {
+            "name": "CICD",
+            "repos": ["pypiPackages"],
+        }
     )
-    orgs = load_yaml(path)
-    assert len(orgs) == 1
-    assert orgs[0].name == "CICD"
-    assert orgs[0].managed is False
-    assert orgs[0].repos[0].name == "pypiPackages"
-    assert orgs[0].repos[0].managed is False
+    assert org is not None
+    assert org.name == "CICD"
+    assert org.managed is False
+    assert org.repos[0].name == "pypiPackages"
+    assert org.repos[0].managed is False
 
 
-def test_save_and_load_roundtrip(tmp_path: Path):
-    path = tmp_path / "orgs.yaml"
-    save_yaml(
+def test_save_and_load_roundtrip():
+    save_orgs(
         [
             StoredOrg(
                 name="CICD",
                 managed=True,
                 repos=[StoredRepo(name="pypiPackages", managed=True)],
             )
-        ],
-        path=path,
+        ]
     )
-    loaded = load_yaml(path)
+    loaded = load_orgs()
     assert loaded[0].managed is True
     assert loaded[0].repos[0].managed is True
+    assert load_yaml()[0].name == "CICD"

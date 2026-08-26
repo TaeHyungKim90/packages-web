@@ -49,7 +49,7 @@ async def list_project_packages(
             index = await project_packages.build_vulnerability_index()
             project_packages.attach_cve_scores(rows, index)
         snap.aggregated = rows
-        project_packages.save_snapshot(snap)
+        project_packages._persist_snapshot(snap)
         snap = project_packages.load_snapshot_cached()
         rows = list(snap.aggregated)
     filtered = project_packages.filter_aggregated(

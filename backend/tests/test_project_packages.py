@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 from app.services.project_packages import (
     AggregatedRow,
@@ -11,10 +9,10 @@ from app.services.project_packages import (
     aggregate_by_package,
     attach_cve_scores,
     filter_aggregated,
-    load_snapshot,
+    load_snapshot_cached,
     previous_lock_index,
-    save_snapshot,
 )
+from app.services.store_packages import load_snapshot, save_snapshot
 
 
 def test_aggregate_joins_organizations():
@@ -91,8 +89,7 @@ def test_attach_cve_scores_uses_normalized_name():
     assert rows[0].max_threat_level == 7.5
 
 
-def test_save_load_snapshot_roundtrip(tmp_path: Path):
-    path = tmp_path / "snap.yaml"
+def test_save_load_snapshot_roundtrip():
     snap = Snapshot(
         collected_at="2026-01-01T00:00:00+00:00",
         projects=[
@@ -124,9 +121,12 @@ def test_save_load_snapshot_roundtrip(tmp_path: Path):
             )
         ],
     )
-    save_snapshot(snap, path)
-    loaded = load_snapshot(path)
-    assert loaded.projects[0].repos[0].lock_files[0].sha == "abc"
+    save_snapshot(snap)
+    loaded = load_snapshot()
+    from app.services.project_packages import invalidate_snapshot_cache
+
+    invalidate_snapshot_cache()
+    assert load_snapshot_cached().projects[0].repos[0].lock_files[0].sha == "abc"
     assert loaded.aggregated[0].max_threat_level == 8.6
 
 

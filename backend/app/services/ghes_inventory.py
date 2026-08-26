@@ -1,50 +1,35 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
-import yaml
-
-from app.config import settings
 from app.services import github
+from app.services.ghes_models import (
+    InventoryOrg,
+    InventoryRepo,
+    StoredOrg,
+    StoredRepo,
+)
+from app.services.store_orgs import (
+    get_synced_at,
+    load_inventory,
+    load_orgs,
+    save_orgs,
+)
 
-
-@dataclass
-class StoredRepo:
-    name: str
-    managed: bool = False
-
-
-@dataclass
-class StoredOrg:
-    name: str
-    managed: bool = False
-    repos: list[StoredRepo] = field(default_factory=list)
-
-
-@dataclass
-class InventoryRepo:
-    name: str
-    managed: bool = False
-    present: bool = True
-
-
-@dataclass
-class InventoryOrg:
-    name: str
-    managed: bool = False
-    present: bool = True
-    repos: list[InventoryRepo] = field(default_factory=list)
-
-
-def resolve_yaml_path() -> Path:
-    configured = (settings.ghes_orgs_yaml_path or "").strip()
-    if configured:
-        return Path(configured)
-    # backend/app/services -> repo root
-    repo_root = Path(__file__).resolve().parents[3]
-    return repo_root / "config" / "ghes-orgs.yaml"
+__all__ = [
+    "InventoryOrg",
+    "InventoryRepo",
+    "StoredOrg",
+    "StoredRepo",
+    "load_yaml",
+    "save_yaml",
+    "merge_with_yaml",
+    "build_inventory",
+    "sync_inventory",
+    "list_cached_inventory",
+    "inventory_to_stored",
+    "_parse_org",
+]
 
 
 def _parse_repo(raw: Any) -> StoredRepo | None:
@@ -77,45 +62,14 @@ def _parse_org(raw: Any) -> StoredOrg | None:
     )
 
 
-def load_yaml(path: Path | None = None) -> list[StoredOrg]:
-    target = path or resolve_yaml_path()
-    if not target.is_file():
-        return []
-    raw = yaml.safe_load(target.read_text(encoding="utf-8")) or {}
-    if not isinstance(raw, dict):
-        return []
-    orgs: list[StoredOrg] = []
-    for item in raw.get("organizations") or []:
-        org = _parse_org(item)
-        if org is not None:
-            orgs.append(org)
-    return orgs
+def load_yaml(path=None) -> list[StoredOrg]:
+    del path
+    return load_orgs()
 
 
-def save_yaml(orgs: list[StoredOrg] | list[InventoryOrg], path: Path | None = None) -> None:
-    target = path or resolve_yaml_path()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "organizations": [
-            {
-                "name": org.name,
-                "managed": bool(org.managed),
-                "repos": [
-                    {"name": repo.name, "managed": bool(repo.managed)}
-                    for repo in org.repos
-                ],
-            }
-            for org in orgs
-        ]
-    }
-    header = (
-        "# GHES 조직 · 레포 인벤토리\n"
-        "# managed: 관리 대상 여부 (UI에서 저장)\n"
-        "# GET /api/ghes-orgs 는 GHES API와 이 파일을 병합합니다.\n"
-        "\n"
-    )
-    body = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
-    target.write_text(header + body, encoding="utf-8")
+def save_yaml(orgs: list[StoredOrg] | list[InventoryOrg], path=None) -> None:
+    del path
+    save_orgs(orgs)
 
 
 def merge_with_yaml(
@@ -187,9 +141,22 @@ async def fetch_live_inventory() -> dict[str, list[str]]:
 
 
 async def build_inventory() -> list[InventoryOrg]:
+    """Live GHES + DB managed merge (used by sync)."""
     live = await fetch_live_inventory()
     stored = load_yaml()
     return merge_with_yaml(live, stored)
+
+
+def list_cached_inventory() -> tuple[list[InventoryOrg], str | None]:
+    """DB-only view for GET."""
+    return load_inventory(), get_synced_at()
+
+
+async def sync_inventory() -> tuple[list[InventoryOrg], str | None]:
+    """Fetch GHES, merge managed flags, persist to DB."""
+    orgs = await build_inventory()
+    save_orgs(orgs, touch_synced_at=True)
+    return orgs, get_synced_at()
 
 
 def inventory_to_stored(orgs: list[InventoryOrg]) -> list[StoredOrg]:
@@ -197,7 +164,11 @@ def inventory_to_stored(orgs: list[InventoryOrg]) -> list[StoredOrg]:
         StoredOrg(
             name=o.name,
             managed=o.managed,
-            repos=[StoredRepo(name=r.name, managed=r.managed) for r in o.repos],
+            present=o.present,
+            repos=[
+                StoredRepo(name=r.name, managed=r.managed, present=r.present)
+                for r in o.repos
+            ],
         )
         for o in orgs
     ]

@@ -470,7 +470,7 @@ def test_proxy_health_success(monkeypatch):
         )
 
     monkeypatch.setattr(
-        "app.routers.proxy_health.fetch_proxy_health", _fake
+        "app.routers.proxy_health.get_proxy_health_cached", _fake
     )
     c = _authed_client()
     response = c.get("/api/proxy-health/nuget")
@@ -485,7 +485,7 @@ def test_proxy_health_maps_nexus_401_to_502(monkeypatch):
         raise httpx.HTTPStatusError("401", request=request, response=response)
 
     monkeypatch.setattr(
-        "app.routers.proxy_health.fetch_proxy_health", _fake
+        "app.routers.proxy_health.get_proxy_health_cached", _fake
     )
     c = _authed_client()
     response = c.get("/api/proxy-health/pypi")
@@ -500,7 +500,7 @@ def test_proxy_health_maps_nexus_403_to_502(monkeypatch):
         raise httpx.HTTPStatusError("403", request=request, response=response)
 
     monkeypatch.setattr(
-        "app.routers.proxy_health.fetch_proxy_health", _fake
+        "app.routers.proxy_health.get_proxy_health_cached", _fake
     )
     c = _authed_client()
     response = c.get("/api/proxy-health/pypi")

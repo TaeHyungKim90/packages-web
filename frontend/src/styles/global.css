@@ -1081,6 +1081,12 @@ button:disabled {
   font-size: 0.9rem;
 }
 
+.orgs-page__meta {
+  margin: -0.5rem 0 1rem;
+  color: var(--muted, #666);
+  font-size: 0.85rem;
+}
+
 .orgs-page__status,
 .orgs-page__empty {
   display: flex;

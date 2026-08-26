@@ -133,22 +133,26 @@ Nexus `pypi-proxy-health` / `npm-proxy-health` / `nuget-proxy-health`의 취약�
 | `SESSION_SECRET` 등 | 세션 쿠키 설정 |
 | `GITHUB_TOKEN` / `GITHUB_ORG` / `GITHUB_BASE_BRANCH` | GitOps 봇 PAT·조직 |
 | `TRANSFER_AUTO_MERGE` | CI 통과 후 auto-merge 사용 여부 |
+| `GHES_INVENTORY_LOGIN` | GHES 조직·과제별 패키지 탭 접근 login |
+| `PACKAGES_WEB_DB_PATH` | SQLite DB 경로 (비우면 `config/packages-web.sqlite3`) |
 
 ## GHES 조직 목록
 
-조직·레포 목록과 관리 대상(`managed`) 여부는 [`config/ghes-orgs.yaml`](config/ghes-orgs.yaml)에 저장합니다.
+조직·레포 목록과 관리 대상(`managed`) 여부는 SQLite DB(`config/packages-web.sqlite3`)에 저장합니다.
 
-- 로그인명이 `sk-inc`인 계정만 **GHES 조직** 탭(`/orgs`)을 볼 수 있습니다.
-- 탭은 GHES API로 조직·레포를 조회한 뒤 YAML의 `managed` 플래그와 병합해 표시합니다.
-- 저장 시 YAML을 디스크에 씁니다. (컨테이너가 read-only면 `config/`를 쓰기 가능하게 마운트해야 합니다.)
+- 로그인명이 `sk-inc`인 계정만 **관리 > GHES 조직** (`/orgs`)을 볼 수 있습니다.
+- **GET**은 DB 캐시만 읽습니다. **동기화**(POST `/api/ghes-orgs/sync`)가 GHES API로 조직·레포를 가져와 DB에 저장합니다.
+- **저장**은 관리 대상 플래그만 DB에 반영합니다 (GHES 재조회 없음).
+- 최초 기동 시 기존 `config/ghes-*.yaml`이 있으면 DB로 **일회 마이그레이션**합니다.
 - 앱의 패키지 신청 대상 조직은 계속 `.env`의 `GITHUB_ORG`를 사용합니다.
 
 ### 과제별 패키지
 
 `sk-inc` 계정만 **관리 > 과제별 패키지** (`/project-packages`)를 쓸 수 있습니다.
 
-- **동기화**가 GHES에서 managed 과제의 `uv.lock` / `package-lock.json` / `packages.lock.json`을 읽고 [`config/ghes-project-packages.yaml`](config/ghes-project-packages.yaml)에 스냅샷을 저장합니다. SHA가 같으면 재파싱하지 않습니다.
-- 취약점 최대 점수는 [`config/ghes-package-vulnerabilities.yaml`](config/ghes-package-vulnerabilities.yaml)에 캐시합니다 (GET 시 Nexus 재조회 없음).
+- **동기화**가 GHES에서 managed 과제의 `uv.lock` / `package-lock.json` / `packages.lock.json`을 읽고 DB에 스냅샷을 저장합니다. SHA가 같으면 재파싱하지 않습니다.
+- CVE 최대 점수는 Nexus Proxy Health 캐시에서 파생해 DB에 저장합니다.
+- **패키지 보안 취약점** 화면도 동일 Nexus 리포트를 DB에 캐시하며, 분석 시각(`generated_at`) 기준 **24시간** 이내면 Nexus를 다시 조회하지 않습니다.
 - 목록은 패키지·버전·반입날짜·CVE 점수·과제명(여러 과제면 `AAC, AAP`)입니다.
 
 ## 구현 단계
