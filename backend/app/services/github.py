@@ -73,6 +73,74 @@ async def get_file(owner: str, repo: str, path: str, *, ref: str) -> RepoFile | 
     return RepoFile(path=path, content=content, sha=data["sha"])
 
 
+async def list_paths_named(
+    owner: str,
+    repo: str,
+    *,
+    ref: str,
+    filename: str,
+) -> list[str]:
+    """Return all blob paths whose basename equals filename (recursive tree)."""
+    headers = _headers()
+    async with httpx.AsyncClient() as client:
+        branch_resp = await client.get(
+            _api(f"/repos/{owner}/{repo}/branches/{ref}"),
+            headers=headers,
+            timeout=30.0,
+        )
+        if branch_resp.status_code == 404:
+            return []
+        if branch_resp.status_code >= 400:
+            raise GitHubError(
+                f"list_paths_named branch failed: {branch_resp.text[:300]}",
+                status_code=branch_resp.status_code,
+            )
+        branch = branch_resp.json()
+        try:
+            tree_sha = branch["commit"]["commit"]["tree"]["sha"]
+        except (KeyError, TypeError) as exc:
+            raise GitHubError(
+                f"list_paths_named: unexpected branch payload for {owner}/{repo}",
+                status_code=502,
+            ) from exc
+
+        tree_resp = await client.get(
+            _api(f"/repos/{owner}/{repo}/git/trees/{tree_sha}"),
+            params={"recursive": "1"},
+            headers=headers,
+            timeout=60.0,
+        )
+        if tree_resp.status_code >= 400:
+            raise GitHubError(
+                f"list_paths_named tree failed: {tree_resp.text[:300]}",
+                status_code=tree_resp.status_code,
+            )
+        tree = tree_resp.json()
+
+    if not isinstance(tree, dict):
+        return []
+    if tree.get("truncated"):
+        raise GitHubError(
+            f"git tree truncated for {owner}/{repo}; cannot list all {filename}",
+            status_code=502,
+        )
+    paths: list[str] = []
+    target = filename.lower()
+    for item in tree.get("tree") or []:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") != "blob":
+            continue
+        path = str(item.get("path") or "")
+        if not path:
+            continue
+        base = path.rsplit("/", 1)[-1]
+        if base.lower() == target:
+            paths.append(path)
+    paths.sort(key=str.lower)
+    return paths
+
+
 async def get_ref_sha(owner: str, repo: str, ref: str) -> str:
     url = _api(f"/repos/{owner}/{repo}/git/ref/{ref}")
     async with httpx.AsyncClient() as client:

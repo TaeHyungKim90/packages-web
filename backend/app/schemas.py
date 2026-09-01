@@ -105,6 +105,8 @@ class ProxyHealthVulnerability(BaseModel):
     artifact: str
     version: str
     imported_at: str | None = None
+    fixed_version: str | None = None
+    in_hosted: bool = False
 
 
 class ProxyHealthLicense(BaseModel):
@@ -116,6 +118,27 @@ class ProxyHealthLicense(BaseModel):
     version: str
     security_issues: int | None = None
     imported_at: str | None = None
+    in_hosted: bool = False
+
+
+class ProxyHealthVulnOverride(BaseModel):
+    problem_code: str
+    artifact: str
+    fixed_version: str | None = None
+    remark: str = ""
+    updated_at: str
+
+
+class ProxyHealthVulnOverrideUpdate(BaseModel):
+    problem_code: str
+    artifact: str
+    fixed_version: str | None = None
+    remark: str = ""
+
+
+class ProxyHealthVulnOverrideKey(BaseModel):
+    problem_code: str
+    artifact: str
 
 
 class ProxyHealthResponse(BaseModel):
@@ -124,6 +147,9 @@ class ProxyHealthResponse(BaseModel):
     generated_at: str | None = None
     vulnerabilities: list[ProxyHealthVulnerability] = Field(default_factory=list)
     licenses: list[ProxyHealthLicense] = Field(default_factory=list)
+    vulnerability_overrides: list[ProxyHealthVulnOverride] = Field(
+        default_factory=list
+    )
 
 
 class GhesRepoItem(BaseModel):

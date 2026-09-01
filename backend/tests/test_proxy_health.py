@@ -300,7 +300,7 @@ async def test_blob_created_pypi_mixed_case_apscheduler():
                 return _Resp(200, hosted)
             return _Resp(404)
 
-    dates = await blob_created_map(
+    dates, hosted_keys = await blob_created_map(
         _Client(),
         hosted_repo="pypi-hosted",
         health_repo="pypi-proxy-health",
@@ -308,6 +308,7 @@ async def test_blob_created_pypi_mixed_case_apscheduler():
         keys={("APScheduler", "3.10.4")},
     )
     assert dates[("apscheduler", "3.10.4")].startswith("2026-08-18T00:00:00")
+    assert ("apscheduler", "3.10.4") in hosted_keys
 
 
 @pytest.mark.asyncio
@@ -345,7 +346,7 @@ async def test_blob_created_hosted_then_health_per_version():
                 return _Resp(200, health)
             return _Resp(404)
 
-    dates = await blob_created_map(
+    dates, hosted_keys = await blob_created_map(
         _Client(),
         hosted_repo="pypi-hosted",
         health_repo="pypi-proxy-health",
@@ -354,6 +355,8 @@ async def test_blob_created_hosted_then_health_per_version():
     )
     assert dates[("foo", "1.0.0")] == "2026-08-16T00:00:00+00:00"
     assert dates[("foo", "1.0.2")] == "2026-08-18T00:00:00+00:00"
+    assert ("foo", "1.0.0") in hosted_keys
+    assert ("foo", "1.0.2") not in hosted_keys
 
 
 @pytest.mark.asyncio
@@ -444,6 +447,9 @@ async def test_fetch_attaches_imported_at_from_hosted_and_health(monkeypatch):
     by_version = {row.version: row.imported_at for row in result.vulnerabilities}
     assert by_version["1.0.0"] == "2026-08-16T00:00:00+00:00"
     assert by_version["1.0.2"] == "2026-08-18T00:00:00+00:00"
+    hosted_by_version = {row.version: row.in_hosted for row in result.vulnerabilities}
+    assert hosted_by_version["1.0.0"] is True
+    assert hosted_by_version["1.0.2"] is False
 
 
 def test_proxy_health_requires_auth():

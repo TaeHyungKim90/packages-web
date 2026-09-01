@@ -27,6 +27,7 @@ GHES(GitHub Enterprise) 계정으로 로그인한 뒤 사용할 수 있습니다
 - Nexus `*-proxy-health` 저장소의 Repository Health Check 상세 리포트를 표시
 - **View by**: Vulnerabilities(기본) / Licenses
 - CVE는 리포트에 포함된 링크로 연결
+- **해결 버전**은 DB에 있으면 재사용하고, 없는 항목만 [OSV](https://osv.dev)로 보강합니다. 버전 조회에 `fixed`가 없으면 CVE/GHSA와 `extracted_events`를 보고, `last_affected`만 있으면 npm/PyPI에서 다음 안정 버전을 찾습니다. Nexus 조회 실패 시에는 이전 SQLite 스냅샷으로 폴백합니다 (`OSV_ENABLED=false`면 보강 생략).
 
 ## 구조
 
@@ -135,6 +136,9 @@ Nexus `pypi-proxy-health` / `npm-proxy-health` / `nuget-proxy-health`의 취약�
 | `TRANSFER_AUTO_MERGE` | CI 통과 후 auto-merge 사용 여부 |
 | `GHES_INVENTORY_LOGIN` | GHES 조직·과제별 패키지 탭 접근 login |
 | `PACKAGES_WEB_DB_PATH` | SQLite DB 경로 (비우면 `config/packages-web.sqlite3`) |
+| `OSV_BASE_URL` | OSV API 베이스 (기본 `https://api.osv.dev`) |
+| `OSV_ENABLED` | 취약점 조회 시 해결 버전 enrichment 여부 |
+| `OSV_VERIFY_SSL` | OSV HTTPS 인증서 검증 (사내 MITM 시 `false`) |
 
 ## GHES 조직 목록
 
@@ -150,9 +154,13 @@ Nexus `pypi-proxy-health` / `npm-proxy-health` / `nuget-proxy-health`의 취약�
 
 `sk-inc` 계정만 **관리 > 과제별 패키지** (`/project-packages`)를 쓸 수 있습니다.
 
-- **동기화**가 GHES에서 managed 과제의 `uv.lock` / `package-lock.json` / `packages.lock.json`을 읽고 DB에 스냅샷을 저장합니다. SHA가 같으면 재파싱하지 않습니다.
-- CVE 최대 점수는 Nexus Proxy Health 캐시에서 파생해 DB에 저장합니다.
-- **패키지 보안 취약점** 화면도 동일 Nexus 리포트를 DB에 캐시하며, 분석 시각(`generated_at`) 기준 **24시간** 이내면 Nexus를 다시 조회하지 않습니다.
+- **동기화**가 GHES에서 managed 과제의 lock을 읽고 DB에 스냅샷을 저장합니다. SHA가 같으면 재파싱하지 않습니다.
+  - pypi: `uv.lock` (루트·backend·frontend)
+  - npm: `package-lock.json` / `pnpm-lock.yaml` / `yarn.lock` (루트·backend·frontend)
+  - nuget: 레포명에 `dotnet`이 포함된 레포만, 트리 전체에서 `packages.lock.json` 검색
+
+- CVE 최대 점수는 Nexus Proxy Health 조회(및 OSV 보강) 결과에서 파생해 DB에 저장합니다.
+- **패키지 보안 취약점** 화면은 Nexus를 조회한 뒤, 해결 버전은 DB 재사용 + 부족분만 OSV로 채웁니다. Nexus 실패 시에만 DB 스냅샷으로 폴백합니다.
 - 목록은 패키지·버전·반입날짜·CVE 점수·과제명(여러 과제면 `AAC, AAP`)입니다.
 
 ## 구현 단계

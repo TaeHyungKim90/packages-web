@@ -11,6 +11,8 @@ import type {
   ProjectPackagesListResponse,
   ProjectPackagesSyncResult,
   ProxyHealthResponse,
+  ProxyHealthVulnOverride,
+  ProxyHealthVulnOverrideUpdate,
 } from "../types";
 
 /** Empty = same-origin via Vite proxy (required for session cookie). */
@@ -159,6 +161,31 @@ export async function fetchProxyHealth(
   const res = await apiFetch(`/api/proxy-health/${eco}`);
   if (!res.ok) throw new Error(await readError(res));
   return res.json();
+}
+
+export async function updateProxyHealthOverride(
+  eco: RequestEco,
+  body: ProxyHealthVulnOverrideUpdate,
+): Promise<ProxyHealthVulnOverride> {
+  const res = await apiFetch(`/api/proxy-health/${eco}/overrides`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+export async function deleteProxyHealthOverride(
+  eco: RequestEco,
+  body: { problem_code: string; artifact: string },
+): Promise<void> {
+  const res = await apiFetch(`/api/proxy-health/${eco}/overrides`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await readError(res));
 }
 
 export async function fetchGhesOrgs(): Promise<GhesOrgsResponse> {

@@ -116,7 +116,9 @@ CREATE TABLE IF NOT EXISTS proxy_health_vulnerability (
     group_name TEXT NOT NULL DEFAULT '',
     artifact TEXT NOT NULL,
     version TEXT NOT NULL,
-    imported_at TEXT
+    imported_at TEXT,
+    fixed_version TEXT,
+    in_hosted INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS proxy_health_license (
@@ -129,7 +131,18 @@ CREATE TABLE IF NOT EXISTS proxy_health_license (
     artifact TEXT NOT NULL,
     version TEXT NOT NULL,
     security_issues INTEGER,
-    imported_at TEXT
+    imported_at TEXT,
+    in_hosted INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS proxy_health_vuln_override (
+    ecosystem TEXT NOT NULL,
+    problem_code TEXT NOT NULL,
+    artifact TEXT NOT NULL,
+    fixed_version TEXT,
+    remark TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (ecosystem, problem_code, artifact)
 );
 """
 
@@ -182,6 +195,34 @@ def init_schema(conn: sqlite3.Connection | None = None) -> None:
     conn.executescript(SCHEMA_SQL)
     _ensure_column(conn, "ghes_org", "present", "present INTEGER NOT NULL DEFAULT 1")
     _ensure_column(conn, "ghes_repo", "present", "present INTEGER NOT NULL DEFAULT 1")
+    _ensure_column(
+        conn,
+        "proxy_health_vulnerability",
+        "fixed_version",
+        "fixed_version TEXT",
+    )
+    _ensure_column(
+        conn,
+        "proxy_health_vulnerability",
+        "in_hosted",
+        "in_hosted INTEGER NOT NULL DEFAULT 0",
+    )
+    _ensure_column(
+        conn,
+        "proxy_health_license",
+        "in_hosted",
+        "in_hosted INTEGER NOT NULL DEFAULT 0",
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS proxy_health_vuln_override ("
+        "ecosystem TEXT NOT NULL, "
+        "problem_code TEXT NOT NULL, "
+        "artifact TEXT NOT NULL, "
+        "fixed_version TEXT, "
+        "remark TEXT NOT NULL DEFAULT '', "
+        "updated_at TEXT NOT NULL, "
+        "PRIMARY KEY (ecosystem, problem_code, artifact))"
+    )
     set_meta(conn, "schema_version", SCHEMA_VERSION)
     conn.commit()
     if own:

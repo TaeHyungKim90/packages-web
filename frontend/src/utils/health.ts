@@ -1,9 +1,41 @@
 import type {
   ProxyHealthLicense,
+  ProxyHealthVulnOverride,
   ProxyHealthVulnerability,
 } from "../types";
 
 export const HEALTH_PAGE_SIZE = 10;
+
+export type ImportFilter = "all" | "hosted" | "pending";
+
+export function filterByImportStatus<
+  T extends { in_hosted?: boolean | null },
+>(items: T[], filter: ImportFilter): T[] {
+  if (filter === "all") return items;
+  if (filter === "hosted") return items.filter((item) => Boolean(item.in_hosted));
+  return items.filter((item) => !item.in_hosted);
+}
+
+export function formatFixedVersions(value: string): string {
+  return value.trim() || "미해결";
+}
+
+export function vulnOverrideKey(
+  problemCode: string,
+  artifact: string,
+): string {
+  return `${problemCode}\0${artifact}`;
+}
+
+function overrideMap(
+  overrides: ProxyHealthVulnOverride[] | undefined,
+): Map<string, ProxyHealthVulnOverride> {
+  const map = new Map<string, ProxyHealthVulnOverride>();
+  for (const item of overrides ?? []) {
+    map.set(vulnOverrideKey(item.problem_code, item.artifact), item);
+  }
+  return map;
+}
 
 const LICENSE_LABELS: Record<string, string> = {
   LIBERAL: "허용적",
@@ -196,6 +228,9 @@ export interface AggregatedVulnerability {
   group: string;
   artifact: string;
   versions: string;
+  fixed_versions: string;
+  remark: string;
+  has_override: boolean;
   imported_at: string | null;
 }
 
@@ -208,7 +243,9 @@ function sortVersions(values: Iterable<string>): string {
 
 export function aggregateVulnerabilities(
   items: ProxyHealthVulnerability[],
+  overrides?: ProxyHealthVulnOverride[],
 ): AggregatedVulnerability[] {
+  const omap = overrideMap(overrides);
   const map = new Map<
     string,
     {
@@ -218,6 +255,7 @@ export function aggregateVulnerabilities(
       group: string;
       artifact: string;
       versions: Set<string>;
+      fixed_versions: Set<string>;
       imported_at: string | null;
     }
   >();
@@ -233,12 +271,16 @@ export function aggregateVulnerabilities(
         group: item.group,
         artifact: item.artifact,
         versions: new Set(),
+        fixed_versions: new Set(),
         imported_at: item.imported_at ?? null,
       };
       map.set(key, entry);
     }
     if (item.version) {
       entry.versions.add(item.version);
+    }
+    if (item.fixed_version) {
+      entry.fixed_versions.add(item.fixed_version);
     }
     entry.imported_at = laterImportedAt(entry.imported_at, item.imported_at);
     if (item.threat_level != null) {
@@ -252,15 +294,26 @@ export function aggregateVulnerabilities(
   }
 
   return [...map.values()]
-    .map((entry) => ({
-      threat_level: entry.threat_level,
-      problem_code: entry.problem_code,
-      problem_url: entry.problem_url,
-      group: entry.group,
-      artifact: entry.artifact,
-      versions: sortVersions(entry.versions),
-      imported_at: entry.imported_at,
-    }))
+    .map((entry) => {
+      const override = omap.get(
+        vulnOverrideKey(entry.problem_code, entry.artifact),
+      );
+      const fixed_versions = override
+        ? override.fixed_version?.trim() || ""
+        : sortVersions(entry.fixed_versions);
+      return {
+        threat_level: entry.threat_level,
+        problem_code: entry.problem_code,
+        problem_url: entry.problem_url,
+        group: entry.group,
+        artifact: entry.artifact,
+        versions: sortVersions(entry.versions),
+        fixed_versions,
+        remark: override?.remark?.trim() || "",
+        has_override: Boolean(override),
+        imported_at: entry.imported_at,
+      };
+    })
     .sort((a, b) => {
       const ta = formatThreatInteger(a.threat_level) ?? -1;
       const tb = formatThreatInteger(b.threat_level) ?? -1;

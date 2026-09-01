@@ -200,11 +200,11 @@ async def _fetch_repo_health(
         licenses=licenses,
     )
     eco = ECOSYSTEM_MAP[ecosystem]
-    await _attach_imported_at(client, eco, result)
+    await _attach_import_status(client, eco, result)
     return result
 
 
-async def _attach_imported_at(
+async def _attach_import_status(
     client: httpx.AsyncClient,
     eco: EcosystemConfig,
     result: ProxyHealthResponse,
@@ -213,7 +213,7 @@ async def _attach_imported_at(
     for item in (*result.vulnerabilities, *result.licenses):
         if item.artifact and item.version:
             keys.add((item.artifact, item.version))
-    dates = await blob_created_map(
+    dates, hosted_keys = await blob_created_map(
         client,
         hosted_repo=eco.hosted_repo,
         health_repo=eco.health_repo,
@@ -222,9 +222,10 @@ async def _attach_imported_at(
     )
     fmt = eco.ecosystem
     for item in (*result.vulnerabilities, *result.licenses):
-        item.imported_at = dates.get(
-            (import_name_key(item.artifact, fmt), item.version)
-        )
+        name_key = import_name_key(item.artifact, fmt)
+        pair = (name_key, item.version)
+        item.imported_at = dates.get(pair)
+        item.in_hosted = pair in hosted_keys
 
 
 async def fetch_proxy_health(ecosystem: str) -> ProxyHealthResponse:

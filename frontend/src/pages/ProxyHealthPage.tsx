@@ -1,7 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
-import { fetchProxyHealth } from "../api/client";
+import {
+  deleteProxyHealthOverride,
+  fetchProxyHealth,
+  updateProxyHealthOverride,
+} from "../api/client";
 import Pagination from "../components/Pagination";
+import VulnOverrideModal from "../components/VulnOverrideModal";
 import type {
   PackageType,
   ProxyHealthResponse,
@@ -12,9 +17,11 @@ import {
   DEFAULT_HEALTH_SORT,
   aggregateLicenses,
   aggregateVulnerabilities,
+  filterByImportStatus,
   filterLicenses,
   filterVulnerabilities,
   filterVulnerabilitiesByBand,
+  formatFixedVersions,
   formatImportedAt,
   formatReportTime,
   formatThreatInteger,
@@ -24,8 +31,10 @@ import {
   sortAggregatedLicenses,
   sortAggregatedVulnerabilities,
   threatSeverity,
+  type AggregatedVulnerability,
   type HealthSort,
   type HealthSortKey,
+  type ImportFilter,
   type ThreatBand,
 } from "../utils/health";
 import { paginate } from "../utils/result";
@@ -80,65 +89,86 @@ export default function ProxyHealthPage({ packageType }: Props) {
   const [view, setView] = useState<ProxyHealthView>("vulnerabilities");
   const [query, setQuery] = useState("");
   const [threatBand, setThreatBand] = useState<ThreatBand>("all");
+  const [importFilter, setImportFilter] = useState<ImportFilter>("all");
   const [sort, setSort] = useState<HealthSort>(DEFAULT_HEALTH_SORT);
   const [page, setPage] = useState(1);
+  const [editRow, setEditRow] = useState<AggregatedVulnerability | null>(null);
+  const [modalSaving, setModalSaving] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
-    setData(null);
+    try {
+      const result = await fetchProxyHealth(packageType);
+      setData(result);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [packageType]);
+
+  useEffect(() => {
     setQuery("");
     setPage(1);
     setView("vulnerabilities");
     setThreatBand("all");
+    setImportFilter("all");
     setSort(DEFAULT_HEALTH_SORT);
+    setEditRow(null);
+    void loadData();
+  }, [loadData]);
 
-    fetchProxyHealth(packageType)
-      .then((result) => {
-        if (!cancelled) setData(result);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [packageType]);
+  const importFilteredVulns = useMemo(
+    () => filterByImportStatus(data?.vulnerabilities ?? [], importFilter),
+    [data, importFilter],
+  );
+  const importFilteredLicenses = useMemo(
+    () => filterByImportStatus(data?.licenses ?? [], importFilter),
+    [data, importFilter],
+  );
 
   const vulnAllRows = useMemo(
-    () => aggregateVulnerabilities(data?.vulnerabilities ?? []),
-    [data],
+    () =>
+      aggregateVulnerabilities(
+        importFilteredVulns,
+        data?.vulnerability_overrides,
+      ),
+    [importFilteredVulns, data?.vulnerability_overrides],
   );
   const licenseAllRows = useMemo(
-    () => aggregateLicenses(data?.licenses ?? []),
-    [data],
+    () => aggregateLicenses(importFilteredLicenses),
+    [importFilteredLicenses],
   );
+
   const vulnRows = useMemo(() => {
-    const aggregated = query.trim()
-      ? aggregateVulnerabilities(
-          filterVulnerabilities(data?.vulnerabilities ?? [], query),
-        )
-      : vulnAllRows;
+    const items = query.trim()
+      ? filterVulnerabilities(importFilteredVulns, query)
+      : importFilteredVulns;
+    const aggregated = aggregateVulnerabilities(
+      items,
+      data?.vulnerability_overrides,
+    );
     return filterVulnerabilitiesByBand(aggregated, threatBand);
-  }, [data, query, threatBand, vulnAllRows]);
+  }, [
+    importFilteredVulns,
+    query,
+    threatBand,
+    data?.vulnerability_overrides,
+  ]);
+
   const sortedVulnRows = useMemo(
     () => sortAggregatedVulnerabilities(vulnRows, sort),
     [vulnRows, sort],
   );
-  const licenseRows = useMemo(
-    () =>
-      query.trim()
-        ? aggregateLicenses(filterLicenses(data?.licenses ?? [], query))
-        : licenseAllRows,
-    [data, query, licenseAllRows],
-  );
+  const licenseRows = useMemo(() => {
+    const items = query.trim()
+      ? filterLicenses(importFilteredLicenses, query)
+      : importFilteredLicenses;
+    return aggregateLicenses(items);
+  }, [importFilteredLicenses, query]);
   const sortedLicenseRows = useMemo(
     () => sortAggregatedLicenses(licenseRows, sort),
     [licenseRows, sort],
@@ -154,7 +184,7 @@ export default function ProxyHealthPage({ packageType }: Props) {
 
   useEffect(() => {
     setPage(1);
-  }, [query, view, threatBand, sort, packageType]);
+  }, [query, view, threatBand, importFilter, sort, packageType]);
 
   useEffect(() => {
     setSort(DEFAULT_HEALTH_SORT);
@@ -169,6 +199,50 @@ export default function ProxyHealthPage({ packageType }: Props) {
     data?.vulnerabilities.some((r) => r.group) ||
       data?.licenses.some((r) => r.group),
   );
+
+  const closeModal = () => {
+    if (modalSaving) return;
+    setEditRow(null);
+    setModalError(null);
+  };
+
+  const handleSaveOverride = async (fixedVersion: string, remark: string) => {
+    if (!editRow) return;
+    setModalSaving(true);
+    setModalError(null);
+    try {
+      await updateProxyHealthOverride(packageType, {
+        problem_code: editRow.problem_code,
+        artifact: editRow.artifact,
+        fixed_version: fixedVersion.trim() || null,
+        remark,
+      });
+      setEditRow(null);
+      await loadData();
+    } catch (err: unknown) {
+      setModalError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setModalSaving(false);
+    }
+  };
+
+  const handleRevertOverride = async () => {
+    if (!editRow) return;
+    setModalSaving(true);
+    setModalError(null);
+    try {
+      await deleteProxyHealthOverride(packageType, {
+        problem_code: editRow.problem_code,
+        artifact: editRow.artifact,
+      });
+      setEditRow(null);
+      await loadData();
+    } catch (err: unknown) {
+      setModalError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setModalSaving(false);
+    }
+  };
 
   const downloadExcel = () => {
     const now = new Date();
@@ -192,6 +266,9 @@ export default function ProxyHealthPage({ packageType }: Props) {
         if (showGroup) out["그룹"] = row.group || "";
         out["이름"] = row.artifact;
         out["버전"] = row.versions || "";
+        out["해결 버전"] = formatFixedVersions(row.fixed_versions);
+        out["비고"] = row.remark || "";
+        out["반입 날짜"] = formatImportedAt(row.imported_at) || "";
         return out;
       });
     } else {
@@ -202,6 +279,7 @@ export default function ProxyHealthPage({ packageType }: Props) {
           "선언된 라이선스": row.declared_license || "",
           이름: row.artifact,
           버전: row.versions || "",
+          "반입 날짜": formatImportedAt(row.imported_at) || "",
         };
         if (showGroup) out["그룹"] = row.group || "";
         return out;
@@ -239,7 +317,8 @@ export default function ProxyHealthPage({ packageType }: Props) {
       <h2 className="card__title">{LABEL_MAP[packageType]} 패키지 보안 취약점</h2>
       <p className="request-page__hint">
         Nexus Repository Health Check 상세 리포트입니다. 보기에서 취약점과
-        라이선스를 전환할 수 있습니다.
+        라이선스를 전환할 수 있습니다. 해결 버전은 DB에 있으면 재사용하고,
+        없으면 OSV로 보강합니다.
       </p>
 
       {loading && (
@@ -274,6 +353,19 @@ export default function ProxyHealthPage({ packageType }: Props) {
               >
                 <option value="vulnerabilities">취약점</option>
                 <option value="licenses">라이선스</option>
+              </select>
+            </label>
+            <label className="health-page__view">
+              반입 여부
+              <select
+                value={importFilter}
+                onChange={(e) =>
+                  setImportFilter(e.target.value as ImportFilter)
+                }
+              >
+                <option value="all">전체</option>
+                <option value="hosted">반입됨</option>
+                <option value="pending">반입전</option>
               </select>
             </label>
             {view === "vulnerabilities" && (
@@ -335,12 +427,15 @@ export default function ProxyHealthPage({ packageType }: Props) {
                       onSort={changeSort}
                     />
                     <th>버전</th>
+                    <th>해결 버전</th>
+                    <th>비고</th>
                     <SortHeader
                       label="반입 날짜"
                       column="importedAt"
                       sort={sort}
                       onSort={changeSort}
                     />
+                    <th>수정</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -370,7 +465,21 @@ export default function ProxyHealthPage({ packageType }: Props) {
                         {showGroup && <td>{row.group || "—"}</td>}
                         <td>{row.artifact}</td>
                         <td>{row.versions || "—"}</td>
+                        <td>{formatFixedVersions(row.fixed_versions)}</td>
+                        <td>{row.remark || "—"}</td>
                         <td>{formatImportedAt(row.imported_at) || "—"}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn-text"
+                            onClick={() => {
+                              setModalError(null);
+                              setEditRow(row);
+                            }}
+                          >
+                            수정
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -436,6 +545,16 @@ export default function ProxyHealthPage({ packageType }: Props) {
           )}
         </>
       )}
+
+      <VulnOverrideModal
+        open={editRow != null}
+        row={editRow}
+        saving={modalSaving}
+        error={modalError}
+        onClose={closeModal}
+        onSave={handleSaveOverride}
+        onRevert={handleRevertOverride}
+      />
     </div>
   );
 }

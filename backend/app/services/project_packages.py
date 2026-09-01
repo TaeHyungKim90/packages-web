@@ -21,18 +21,24 @@ from app.services.store_packages import (
 )
 
 GHES_CONCURRENCY = 5
+# pypi / npm: fixed candidate paths. nuget: recursive search on *dotnet* repos only.
+_NPM_LOCK_NAMES = ("package-lock.json", "pnpm-lock.yaml", "yarn.lock")
+_LOCK_DIRS = ("", "backend/", "frontend/")
 LOCK_CANDIDATES: list[tuple[str, str]] = [
     ("pypi", "uv.lock"),
     ("pypi", "backend/uv.lock"),
     ("pypi", "frontend/uv.lock"),
-    ("npm", "package-lock.json"),
-    ("npm", "backend/package-lock.json"),
-    ("npm", "frontend/package-lock.json"),
-    ("nuget", "packages.lock.json"),
-    ("nuget", "src/packages.lock.json"),
-    ("nuget", "backend/packages.lock.json"),
-    ("nuget", "frontend/packages.lock.json"),
+    *[
+        ("npm", f"{directory}{name}")
+        for name in _NPM_LOCK_NAMES
+        for directory in _LOCK_DIRS
+    ],
 ]
+NUGET_LOCK_FILENAME = "packages.lock.json"
+
+
+def is_dotnet_repo(repo_name: str) -> bool:
+    return "dotnet" in (repo_name or "").lower()
 
 
 @dataclass
@@ -131,7 +137,8 @@ async def _fetch_lock(
     if prev is not None and prev.sha and prev.sha == file.sha:
         return prev
     packages = [
-        LockPackage(name=n, version=v) for n, v in parse_lock(fmt, file.content)
+        LockPackage(name=n, version=v)
+        for n, v in parse_lock(fmt, file.content, path=path)
     ]
     return LockFile(path=path, format=fmt, sha=file.sha, packages=packages)
 
@@ -146,6 +153,21 @@ async def collect_org(
     repos: list[RepoSnapshot] = []
     for repo in org.repos:
         errors: list[str] = []
+        candidates = list(LOCK_CANDIDATES)
+        if is_dotnet_repo(repo.name):
+            try:
+                nuget_paths = await github.list_paths_named(
+                    org.name,
+                    repo.name,
+                    ref=settings.github_base_branch,
+                    filename=NUGET_LOCK_FILENAME,
+                )
+            except GitHubError as exc:
+                errors.append(f"{NUGET_LOCK_FILENAME} scan: {exc}")
+                nuget_paths = []
+            for path in nuget_paths:
+                candidates.append(("nuget", path))
+
         tasks = [
             _fetch_lock(
                 org.name,
@@ -155,11 +177,11 @@ async def collect_org(
                 prev_index.get((org.name, repo.name, path)),
                 sem,
             )
-            for fmt, path in LOCK_CANDIDATES
+            for fmt, path in candidates
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         locks: list[LockFile] = []
-        for item, (_fmt, path) in zip(results, LOCK_CANDIDATES, strict=True):
+        for item, (_fmt, path) in zip(results, candidates, strict=True):
             if isinstance(item, Exception):
                 errors.append(f"{path}: {item}")
                 continue
@@ -245,7 +267,7 @@ async def attach_imported_at(rows: list[AggregatedRow]) -> None:
             eco = ECOSYSTEM_MAP.get(fmt)
             if not eco:
                 continue
-            mapped = await blob_created_map(
+            mapped, _hosted_keys = await blob_created_map(
                 client,
                 hosted_repo=eco.hosted_repo,
                 health_repo=eco.health_repo,

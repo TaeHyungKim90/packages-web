@@ -501,16 +501,17 @@ async def blob_created_map(
     health_repo: str,
     package_format: str,
     keys: set[tuple[str, str]],
-) -> dict[tuple[str, str], str]:
-    """(normalized name, version) → blobCreated. Hosted first, then health_repo."""
+) -> tuple[dict[tuple[str, str], str], set[tuple[str, str]]]:
+    """(normalized name, version) → blobCreated, plus keys found in hosted."""
     if not keys:
-        return {}
+        return {}, set()
     by_name: dict[str, set[str]] = {}
     for name, version in keys:
         if name and version:
             by_name.setdefault(name, set()).add(version)
 
     resolved: dict[tuple[str, str], str] = {}
+    hosted_keys: set[tuple[str, str]] = set()
     sem = asyncio.Semaphore(BLOB_SEARCH_CONCURRENCY)
 
     async def lookup(artifact: str, versions: set[str]) -> None:
@@ -523,6 +524,7 @@ async def blob_created_map(
                 wanted_versions=versions,
             )
             name_key = import_name_key(artifact, package_format)
+            hosted_keys.update(hosted.keys())
             missing = {
                 ver
                 for ver in versions
@@ -543,4 +545,4 @@ async def blob_created_map(
     await asyncio.gather(
         *(lookup(name, versions) for name, versions in by_name.items())
     )
-    return resolved
+    return resolved, hosted_keys

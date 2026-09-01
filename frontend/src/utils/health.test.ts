@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   aggregateLicenses,
   aggregateVulnerabilities,
+  filterByImportStatus,
   filterLicenses,
   filterVulnerabilities,
   filterVulnerabilitiesByBand,
+  formatFixedVersions,
   formatThreatInteger,
   licenseThreatClass,
   licenseThreatLabel,
@@ -64,6 +66,40 @@ describe("health helpers", () => {
     expect(formatThreatInteger(rows[0].threat_level)).toBe(9);
     expect(rows[1].artifact).toBe("foo");
     expect(rows[1].versions).toBe("1.16.2, 1.16.3");
+  });
+
+  it("aggregates unique fixed versions", () => {
+    const rows = aggregateVulnerabilities([
+      {
+        threat_level: 8.6,
+        problem_code: "CVE-2020-1",
+        problem_url: "",
+        group: "",
+        artifact: "foo",
+        version: "1.0.0",
+        fixed_version: "1.2.0",
+      },
+      {
+        threat_level: 8.6,
+        problem_code: "CVE-2020-1",
+        problem_url: "",
+        group: "",
+        artifact: "foo",
+        version: "1.1.0",
+        fixed_version: "1.2.0",
+      },
+      {
+        threat_level: 8.6,
+        problem_code: "CVE-2020-1",
+        problem_url: "",
+        group: "",
+        artifact: "foo",
+        version: "0.9.0",
+        fixed_version: "1.3.0",
+      },
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].fixed_versions).toBe("1.2.0, 1.3.0");
   });
 
   it("keeps the latest imported_at when versions are merged", () => {
@@ -359,5 +395,48 @@ describe("health helpers", () => {
     ];
     expect(filterLicenses(rows, "mit")).toHaveLength(1);
     expect(filterLicenses(rows, "gpl")).toHaveLength(0);
+  });
+
+  it("formatFixedVersions shows 미해결 when empty", () => {
+    expect(formatFixedVersions("")).toBe("미해결");
+    expect(formatFixedVersions("1.2.3")).toBe("1.2.3");
+  });
+
+  it("filterByImportStatus filters hosted and pending rows", () => {
+    const rows = [
+      { artifact: "a", in_hosted: true },
+      { artifact: "b", in_hosted: false },
+    ];
+    expect(filterByImportStatus(rows, "all")).toHaveLength(2);
+    expect(filterByImportStatus(rows, "hosted")).toEqual([rows[0]]);
+    expect(filterByImportStatus(rows, "pending")).toEqual([rows[1]]);
+  });
+
+  it("aggregateVulnerabilities applies manual override per CVE+package", () => {
+    const rows = aggregateVulnerabilities(
+      [
+        {
+          threat_level: 5,
+          problem_code: "CVE-1",
+          problem_url: "",
+          group: "",
+          artifact: "pkg",
+          version: "1.0.0",
+          fixed_version: "9.9.9",
+        },
+      ],
+      [
+        {
+          problem_code: "CVE-1",
+          artifact: "pkg",
+          fixed_version: "2.0.0",
+          remark: "manual",
+          updated_at: "2026-01-01T00:00:00+00:00",
+        },
+      ],
+    );
+    expect(rows[0].fixed_versions).toBe("2.0.0");
+    expect(rows[0].remark).toBe("manual");
+    expect(rows[0].has_override).toBe(true);
   });
 });

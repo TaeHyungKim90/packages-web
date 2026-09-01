@@ -97,6 +97,10 @@ class Settings(BaseSettings):
     ghes_inventory_login: str = "sk-inc"
     # Empty = <repo>/config/packages-web.sqlite3
     packages_web_db_path: str = ""
+    osv_base_url: str = "https://api.osv.dev"
+    osv_enabled: bool = True
+    # Public OSV often fails behind corp MITM — default off for local/corp use
+    osv_verify_ssl: bool = False
 
     @field_validator("cors_origins", mode="before")
     @classmethod

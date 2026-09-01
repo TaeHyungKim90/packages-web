@@ -19,5 +19,9 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    // Keep same-origin login URL assertions independent of local .env.
+    env: {
+      VITE_API_BASE_URL: "",
+    },
   },
 });

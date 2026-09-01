@@ -1,38 +1,22 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from app.db import connect
-from app.schemas import ProxyHealthLicense, ProxyHealthResponse, ProxyHealthVulnerability
+from app.schemas import (
+    ProxyHealthLicense,
+    ProxyHealthResponse,
+    ProxyHealthVulnerability,
+    ProxyHealthVulnOverride,
+    ProxyHealthVulnOverrideUpdate,
+)
 from app.services.nexus_health import fetch_proxy_health
-
-PROXY_HEALTH_TTL = timedelta(hours=24)
-
-
-def _parse_iso(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
+from app.services.osv import _is_newer, enrich_fixed_versions, is_package_fixed_version
 
 
-def _cache_age(generated_at: str | None, fetched_at: str) -> timedelta | None:
-    anchor = _parse_iso(generated_at) or _parse_iso(fetched_at)
-    if anchor is None:
-        return None
-    if anchor.tzinfo is None:
-        anchor = anchor.replace(tzinfo=UTC)
-    return datetime.now(tz=UTC) - anchor
-
-
-def is_cache_fresh(generated_at: str | None, fetched_at: str) -> bool:
-    age = _cache_age(generated_at, fetched_at)
-    if age is None:
-        return False
-    return age < PROXY_HEALTH_TTL
+def _row_bool(value: object) -> bool:
+    return bool(value) if value is not None else False
 
 
 def _load_report(conn: sqlite3.Connection, ecosystem: str) -> ProxyHealthResponse | None:
@@ -43,23 +27,27 @@ def _load_report(conn: sqlite3.Connection, ecosystem: str) -> ProxyHealthRespons
     ).fetchone()
     if meta is None:
         return None
-    vulnerabilities = [
-        ProxyHealthVulnerability(
-            threat_level=row["threat_level"],
-            problem_code=row["problem_code"],
-            problem_url=row["problem_url"],
-            group=row["group_name"],
-            artifact=row["artifact"],
-            version=row["version"],
-            imported_at=row["imported_at"],
+    vulnerabilities: list[ProxyHealthVulnerability] = []
+    for row in conn.execute(
+        "SELECT threat_level, problem_code, problem_url, group_name, "
+        "artifact, version, imported_at, fixed_version, in_hosted "
+        "FROM proxy_health_vulnerability WHERE ecosystem = ?",
+        (ecosystem,),
+    ):
+        raw_fixed = row["fixed_version"] if "fixed_version" in row.keys() else None
+        vulnerabilities.append(
+            ProxyHealthVulnerability(
+                threat_level=row["threat_level"],
+                problem_code=row["problem_code"],
+                problem_url=row["problem_url"],
+                group=row["group_name"],
+                artifact=row["artifact"],
+                version=row["version"],
+                imported_at=row["imported_at"],
+                fixed_version=raw_fixed if is_package_fixed_version(raw_fixed) else None,
+                in_hosted=_row_bool(row["in_hosted"] if "in_hosted" in row.keys() else 0),
+            )
         )
-        for row in conn.execute(
-            "SELECT threat_level, problem_code, problem_url, group_name, "
-            "artifact, version, imported_at "
-            "FROM proxy_health_vulnerability WHERE ecosystem = ?",
-            (ecosystem,),
-        )
-    ]
     licenses = [
         ProxyHealthLicense(
             license_threat=row["license_threat"],
@@ -70,10 +58,11 @@ def _load_report(conn: sqlite3.Connection, ecosystem: str) -> ProxyHealthRespons
             version=row["version"],
             security_issues=row["security_issues"],
             imported_at=row["imported_at"],
+            in_hosted=_row_bool(row["in_hosted"] if "in_hosted" in row.keys() else 0),
         )
         for row in conn.execute(
             "SELECT license_threat, declared_license, observed_licenses, "
-            "group_name, artifact, version, security_issues, imported_at "
+            "group_name, artifact, version, security_issues, imported_at, in_hosted "
             "FROM proxy_health_license WHERE ecosystem = ?",
             (ecosystem,),
         )
@@ -103,7 +92,8 @@ def save_proxy_health_to_conn(
         conn.execute(
             "INSERT INTO proxy_health_vulnerability "
             "(ecosystem, threat_level, problem_code, problem_url, group_name, "
-            "artifact, version, imported_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "artifact, version, imported_at, fixed_version, in_hosted) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 eco,
                 item.threat_level,
@@ -113,14 +103,16 @@ def save_proxy_health_to_conn(
                 item.artifact,
                 item.version,
                 item.imported_at,
+                item.fixed_version,
+                1 if item.in_hosted else 0,
             ),
         )
     for item in report.licenses:
         conn.execute(
             "INSERT INTO proxy_health_license "
             "(ecosystem, license_threat, declared_license, observed_licenses, "
-            "group_name, artifact, version, security_issues, imported_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "group_name, artifact, version, security_issues, imported_at, in_hosted) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 eco,
                 item.license_threat,
@@ -131,6 +123,7 @@ def save_proxy_health_to_conn(
                 item.version,
                 item.security_issues,
                 item.imported_at,
+                1 if item.in_hosted else 0,
             ),
         )
 
@@ -146,26 +139,216 @@ def load_all_cached_reports(
     return out
 
 
+def load_fixed_version_index(
+    conn: sqlite3.Connection, ecosystem: str
+) -> dict[tuple[str, str, str], str]:
+    """Map (artifact, version, problem_code) -> fixed_version from DB."""
+    index: dict[tuple[str, str, str], str] = {}
+    try:
+        rows = conn.execute(
+            "SELECT artifact, version, problem_code, fixed_version "
+            "FROM proxy_health_vulnerability "
+            "WHERE ecosystem = ? AND fixed_version IS NOT NULL AND fixed_version != ''",
+            (ecosystem,),
+        )
+    except sqlite3.OperationalError:
+        return index
+    for row in rows:
+        fixed = str(row["fixed_version"] or "").strip()
+        if not is_package_fixed_version(fixed):
+            continue
+        version = str(row["version"] or "").strip()
+        if version and not _is_newer(fixed, version):
+            continue
+        key = (
+            str(row["artifact"] or ""),
+            str(row["version"] or ""),
+            str(row["problem_code"] or ""),
+        )
+        index[key] = fixed
+    return index
+
+
+def load_vuln_overrides(
+    conn: sqlite3.Connection, ecosystem: str
+) -> list[ProxyHealthVulnOverride]:
+    try:
+        rows = conn.execute(
+            "SELECT problem_code, artifact, fixed_version, remark, updated_at "
+            "FROM proxy_health_vuln_override WHERE ecosystem = ? "
+            "ORDER BY problem_code, artifact",
+            (ecosystem,),
+        )
+    except sqlite3.OperationalError:
+        return []
+    out: list[ProxyHealthVulnOverride] = []
+    for row in rows:
+        raw_fixed = row["fixed_version"]
+        fixed = (
+            str(raw_fixed).strip()
+            if raw_fixed and is_package_fixed_version(str(raw_fixed))
+            else None
+        )
+        out.append(
+            ProxyHealthVulnOverride(
+                problem_code=str(row["problem_code"] or ""),
+                artifact=str(row["artifact"] or ""),
+                fixed_version=fixed,
+                remark=str(row["remark"] or ""),
+                updated_at=str(row["updated_at"] or ""),
+            )
+        )
+    return out
+
+
+def vuln_override_map(
+    overrides: list[ProxyHealthVulnOverride],
+) -> dict[tuple[str, str], ProxyHealthVulnOverride]:
+    return {(o.problem_code, o.artifact): o for o in overrides}
+
+
+def save_vuln_override(
+    conn: sqlite3.Connection,
+    ecosystem: str,
+    update: ProxyHealthVulnOverrideUpdate,
+) -> ProxyHealthVulnOverride:
+    fixed: str | None = None
+    if update.fixed_version is not None:
+        text = update.fixed_version.strip()
+        if text:
+            if not is_package_fixed_version(text):
+                raise ValueError(f"Invalid fixed version: {text}")
+            fixed = text
+    updated_at = datetime.now(tz=UTC).isoformat()
+    conn.execute(
+        "INSERT INTO proxy_health_vuln_override "
+        "(ecosystem, problem_code, artifact, fixed_version, remark, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(ecosystem, problem_code, artifact) DO UPDATE SET "
+        "fixed_version = excluded.fixed_version, "
+        "remark = excluded.remark, "
+        "updated_at = excluded.updated_at",
+        (
+            ecosystem,
+            update.problem_code.strip(),
+            update.artifact.strip(),
+            fixed,
+            (update.remark or "").strip(),
+            updated_at,
+        ),
+    )
+    return ProxyHealthVulnOverride(
+        problem_code=update.problem_code.strip(),
+        artifact=update.artifact.strip(),
+        fixed_version=fixed,
+        remark=(update.remark or "").strip(),
+        updated_at=updated_at,
+    )
+
+
+def delete_vuln_override(
+    conn: sqlite3.Connection,
+    ecosystem: str,
+    problem_code: str,
+    artifact: str,
+) -> bool:
+    cur = conn.execute(
+        "DELETE FROM proxy_health_vuln_override "
+        "WHERE ecosystem = ? AND problem_code = ? AND artifact = ?",
+        (ecosystem, problem_code.strip(), artifact.strip()),
+    )
+    return cur.rowcount > 0
+
+
+def apply_fixed_versions_from_index(
+    vulns: list[ProxyHealthVulnerability],
+    index: dict[tuple[str, str, str], str],
+) -> list[ProxyHealthVulnerability]:
+    if not index:
+        return vulns
+    out: list[ProxyHealthVulnerability] = []
+    for item in vulns:
+        if item.fixed_version and is_package_fixed_version(item.fixed_version):
+            out.append(item)
+            continue
+        key = (item.artifact, item.version, item.problem_code)
+        cached = index.get(key)
+        if cached and is_package_fixed_version(cached) and _is_newer(cached, item.version):
+            out.append(item.model_copy(update={"fixed_version": cached}))
+        else:
+            out.append(
+                item
+                if not item.fixed_version
+                else item.model_copy(update={"fixed_version": None})
+            )
+    return out
+
+
+def apply_vuln_overrides(
+    vulns: list[ProxyHealthVulnerability],
+    overrides: dict[tuple[str, str], ProxyHealthVulnOverride],
+) -> list[ProxyHealthVulnerability]:
+    if not overrides:
+        return vulns
+    out: list[ProxyHealthVulnerability] = []
+    for item in vulns:
+        key = (item.problem_code, item.artifact)
+        override = overrides.get(key)
+        if override is None:
+            out.append(item)
+            continue
+        out.append(item.model_copy(update={"fixed_version": override.fixed_version}))
+    return out
+
+
+def _finalize_report(
+    report: ProxyHealthResponse,
+    overrides: list[ProxyHealthVulnOverride],
+) -> ProxyHealthResponse:
+    override_map = vuln_override_map(overrides)
+    return report.model_copy(
+        update={
+            "vulnerabilities": apply_vuln_overrides(
+                report.vulnerabilities, override_map
+            ),
+            "vulnerability_overrides": overrides,
+        }
+    )
+
+
 async def get_proxy_health_cached(ecosystem: str) -> ProxyHealthResponse:
+    """Nexus 목록 + DB에 있는 해결 버전 재사용, 없는 행만 OSV 조회."""
     key = ecosystem.lower().strip()
+    cached: ProxyHealthResponse | None = None
+    fixed_index: dict[tuple[str, str, str], str] = {}
+    overrides: list[ProxyHealthVulnOverride] = []
     conn = connect()
     try:
-        meta = conn.execute(
-            "SELECT generated_at, fetched_at FROM proxy_health_meta WHERE ecosystem = ?",
-            (key,),
-        ).fetchone()
-        cached = _load_report(conn, key) if meta else None
-        if cached and meta and is_cache_fresh(meta["generated_at"], meta["fetched_at"]):
-            return cached
+        cached = _load_report(conn, key)
+        fixed_index = load_fixed_version_index(conn, key)
+        overrides = load_vuln_overrides(conn, key)
     finally:
         conn.close()
+
+    override_map = vuln_override_map(overrides)
+    skip_keys = set(override_map.keys())
 
     try:
         fresh = await fetch_proxy_health(key)
     except Exception:
         if cached is not None:
-            return cached
+            return _finalize_report(cached, overrides)
         raise
+
+    seeded = apply_fixed_versions_from_index(fresh.vulnerabilities, fixed_index)
+    enriched = await enrich_fixed_versions(key, seeded, skip_override_keys=skip_keys)
+    vulns = apply_vuln_overrides(enriched, override_map)
+    fresh = fresh.model_copy(
+        update={
+            "vulnerabilities": vulns,
+            "vulnerability_overrides": overrides,
+        }
+    )
 
     conn = connect()
     try:

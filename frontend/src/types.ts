@@ -114,6 +114,8 @@ export interface ProxyHealthVulnerability {
   artifact: string;
   version: string;
   imported_at?: string | null;
+  fixed_version?: string | null;
+  in_hosted?: boolean;
 }
 
 export interface ProxyHealthLicense {
@@ -125,6 +127,22 @@ export interface ProxyHealthLicense {
   version: string;
   security_issues: number | null;
   imported_at?: string | null;
+  in_hosted?: boolean;
+}
+
+export interface ProxyHealthVulnOverride {
+  problem_code: string;
+  artifact: string;
+  fixed_version: string | null;
+  remark: string;
+  updated_at: string;
+}
+
+export interface ProxyHealthVulnOverrideUpdate {
+  problem_code: string;
+  artifact: string;
+  fixed_version?: string | null;
+  remark?: string;
 }
 
 export interface ProxyHealthResponse {
@@ -133,6 +151,7 @@ export interface ProxyHealthResponse {
   generated_at: string | null;
   vulnerabilities: ProxyHealthVulnerability[];
   licenses: ProxyHealthLicense[];
+  vulnerability_overrides?: ProxyHealthVulnOverride[];
 }
 
 export interface GhesRepoItem {

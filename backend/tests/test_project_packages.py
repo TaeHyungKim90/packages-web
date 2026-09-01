@@ -166,3 +166,64 @@ async def test_fetch_lock_skips_parse_when_sha_matches(monkeypatch):
     )
     assert result is prev
     assert result.packages[0].name == "cached"
+
+
+def test_is_dotnet_repo():
+    from app.services.project_packages import is_dotnet_repo
+
+    assert is_dotnet_repo("AIP_APP_DOTNET") is True
+    assert is_dotnet_repo("aip-app-dotnet-svc") is True
+    assert is_dotnet_repo("AIP_AGENT_BACKEND_PYTHON") is False
+
+
+@pytest.mark.asyncio
+async def test_collect_org_scans_nuget_only_on_dotnet_repos(monkeypatch):
+    import asyncio
+
+    from app.services.ghes_models import StoredOrg, StoredRepo
+    from app.services.github import RepoFile
+    from app.services.project_packages import collect_org
+
+    listed: list[str] = []
+
+    async def _list_paths(org, repo, *, ref, filename):
+        listed.append(repo)
+        assert filename == "packages.lock.json"
+        if repo == "AIP_APP_DOTNET":
+            return ["src/App/packages.lock.json"]
+        return []
+
+    async def _get(org, repo, path, *, ref):
+        if path.endswith("packages.lock.json"):
+            return RepoFile(
+                path=path,
+                content='{"dependencies":{"net8.0":{"Newtonsoft.Json":{"type":"Direct","resolved":"13.0.3"}}}}',
+                sha="n1",
+            )
+        return None
+
+    monkeypatch.setattr(
+        "app.services.project_packages.github.list_paths_named", _list_paths
+    )
+    monkeypatch.setattr("app.services.project_packages.github.get_file", _get)
+
+    org = StoredOrg(
+        name="AIP",
+        managed=True,
+        repos=[
+            StoredRepo(name="AIP_APP_DOTNET"),
+            StoredRepo(name="AIP_AGENT_BACKEND_PYTHON"),
+        ],
+    )
+    snap = await collect_org(
+        org, previous=Snapshot(), sem=asyncio.Semaphore(5)
+    )
+    assert listed == ["AIP_APP_DOTNET"]
+    by_repo = {r.name: r for r in snap.repos}
+    nuget_locks = [
+        lf for lf in by_repo["AIP_APP_DOTNET"].lock_files if lf.format == "nuget"
+    ]
+    assert len(nuget_locks) == 1
+    assert nuget_locks[0].path == "src/App/packages.lock.json"
+    assert nuget_locks[0].packages[0].name == "Newtonsoft.Json"
+    assert not any(lf.format == "nuget" for lf in by_repo["AIP_AGENT_BACKEND_PYTHON"].lock_files)
