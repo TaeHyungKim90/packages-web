@@ -227,3 +227,159 @@ async def test_collect_org_scans_nuget_only_on_dotnet_repos(monkeypatch):
     assert nuget_locks[0].path == "src/App/packages.lock.json"
     assert nuget_locks[0].packages[0].name == "Newtonsoft.Json"
     assert not any(lf.format == "nuget" for lf in by_repo["AIP_AGENT_BACKEND_PYTHON"].lock_files)
+
+
+def test_rebuild_vuln_index_skips_already_fixed_versions():
+    from app.db import connect, init_schema
+    from app.schemas import ProxyHealthResponse, ProxyHealthVulnerability
+    from app.services.proxy_health_store import save_proxy_health_to_conn
+    from app.services.store_packages import rebuild_vulnerability_index_from_proxy_health
+
+    conn = connect()
+    init_schema(conn)
+    save_proxy_health_to_conn(
+        conn,
+        ProxyHealthResponse(
+            ecosystem="pypi",
+            repository="pypi-proxy-health",
+            generated_at="2026-01-01T00:00:00+00:00",
+            vulnerabilities=[
+                ProxyHealthVulnerability(
+                    threat_level=9.0,
+                    problem_code="CVE-FIXED",
+                    artifact="foo",
+                    version="1.2.0",
+                    fixed_version="1.2.0",
+                ),
+                ProxyHealthVulnerability(
+                    threat_level=8.0,
+                    problem_code="CVE-PAST-FIX",
+                    artifact="bar",
+                    version="2.1.0",
+                    fixed_version="2.0.0",
+                ),
+                ProxyHealthVulnerability(
+                    threat_level=7.5,
+                    problem_code="CVE-OPEN",
+                    artifact="baz",
+                    version="1.0.0",
+                    fixed_version="1.2.0",
+                ),
+                ProxyHealthVulnerability(
+                    threat_level=6.0,
+                    problem_code="CVE-NO-FIX",
+                    artifact="qux",
+                    version="0.1.0",
+                    fixed_version=None,
+                ),
+            ],
+            licenses=[],
+        ),
+    )
+    conn.commit()
+    index = rebuild_vulnerability_index_from_proxy_health(conn)
+    conn.commit()
+    conn.close()
+
+    assert ("pypi", "foo", "1.2.0") not in index
+    assert ("pypi", "bar", "2.1.0") not in index
+    assert index[("pypi", "baz", "1.0.0")] == 7.5
+    assert index[("pypi", "qux", "0.1.0")] == 6.0
+
+
+def test_rebuild_vuln_index_respects_override_fixed_version():
+    from app.db import connect, init_schema
+    from app.schemas import (
+        ProxyHealthResponse,
+        ProxyHealthVulnerability,
+        ProxyHealthVulnOverrideUpdate,
+    )
+    from app.services.proxy_health_store import (
+        save_proxy_health_to_conn,
+        save_vuln_override,
+    )
+    from app.services.store_packages import rebuild_vulnerability_index_from_proxy_health
+
+    conn = connect()
+    init_schema(conn)
+    save_proxy_health_to_conn(
+        conn,
+        ProxyHealthResponse(
+            ecosystem="pypi",
+            repository="pypi-proxy-health",
+            generated_at="2026-01-01T00:00:00+00:00",
+            vulnerabilities=[
+                ProxyHealthVulnerability(
+                    threat_level=9.0,
+                    problem_code="CVE-1",
+                    artifact="pkg",
+                    version="1.0.0",
+                    fixed_version=None,
+                ),
+            ],
+            licenses=[],
+        ),
+    )
+    save_vuln_override(
+        conn,
+        "pypi",
+        ProxyHealthVulnOverrideUpdate(
+            problem_code="CVE-1",
+            artifact="pkg",
+            fixed_version="1.0.0",
+            remark="already fixed",
+        ),
+    )
+    conn.commit()
+    index = rebuild_vulnerability_index_from_proxy_health(conn)
+    conn.close()
+    assert ("pypi", "pkg", "1.0.0") not in index
+
+
+def test_rebuild_vuln_index_skips_false_positive_remark():
+    from app.db import connect, init_schema
+    from app.schemas import (
+        ProxyHealthResponse,
+        ProxyHealthVulnerability,
+        ProxyHealthVulnOverrideUpdate,
+    )
+    from app.services.proxy_health_store import (
+        save_proxy_health_to_conn,
+        save_vuln_override,
+    )
+    from app.services.store_packages import rebuild_vulnerability_index_from_proxy_health
+
+    conn = connect()
+    init_schema(conn)
+    save_proxy_health_to_conn(
+        conn,
+        ProxyHealthResponse(
+            ecosystem="pypi",
+            repository="pypi-proxy-health",
+            generated_at="2026-01-01T00:00:00+00:00",
+            vulnerabilities=[
+                ProxyHealthVulnerability(
+                    threat_level=9.0,
+                    problem_code="CVE-FP",
+                    artifact="noise",
+                    version="1.0.0",
+                    fixed_version=None,
+                ),
+            ],
+            licenses=[],
+        ),
+    )
+    save_vuln_override(
+        conn,
+        "pypi",
+        ProxyHealthVulnOverrideUpdate(
+            problem_code="CVE-FP",
+            artifact="noise",
+            fixed_version=None,
+            remark="오탐",
+        ),
+    )
+    conn.commit()
+    index = rebuild_vulnerability_index_from_proxy_health(conn)
+    conn.close()
+    assert ("pypi", "noise", "1.0.0") not in index

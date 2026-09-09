@@ -353,12 +353,27 @@ def save_vulnerability_index(index: dict[tuple[str, str, str], float]) -> None:
 def rebuild_vulnerability_index_from_proxy_health(
     conn: sqlite3.Connection,
 ) -> dict[tuple[str, str, str], float]:
-    from app.services.proxy_health_store import load_all_cached_reports
+    from app.services.osv import is_resolved_or_false_positive
+    from app.services.proxy_health_store import (
+        apply_vuln_overrides,
+        load_all_cached_reports,
+        load_vuln_overrides,
+        vuln_override_map,
+    )
 
     index: dict[tuple[str, str, str], float] = {}
     for fmt, report in load_all_cached_reports(conn).items():
-        for item in report.vulnerabilities:
+        overrides = load_vuln_overrides(conn, fmt)
+        override_map = vuln_override_map(overrides)
+        vulns = apply_vuln_overrides(report.vulnerabilities, override_map)
+        for item in vulns:
             if item.threat_level is None or not item.artifact or not item.version:
+                continue
+            override = override_map.get((item.problem_code, item.artifact))
+            remark = override.remark if override else None
+            if is_resolved_or_false_positive(
+                item.version, item.fixed_version, remark=remark
+            ):
                 continue
             key = (fmt, import_name_key(item.artifact, fmt), item.version)
             prev = index.get(key)
