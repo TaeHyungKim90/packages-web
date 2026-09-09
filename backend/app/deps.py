@@ -55,7 +55,7 @@ async def require_cicd_owner(
         return user
     raise HTTPException(
         status_code=403,
-        detail="CICD 조직 owner만 패키지를 신청할 수 있습니다",
+        detail="CICD 조직 owner만 사용할 수 있습니다",
     )
 
 

@@ -25,6 +25,12 @@ frontend/dist/
 .DS_Store
 Thumbs.db
 
+# Excel workbooks (local only)
+*.xlsx
+*.xlsm
+~$*.xlsx
+~$*.xlsm
+
 # Local reference materials
 refs/
 
