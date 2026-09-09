@@ -231,7 +231,7 @@ export interface AggregatedVulnerability {
   fixed_versions: string;
   remark: string;
   has_override: boolean;
-  imported_at: string | null;
+  published_at: string | null;
 }
 
 function sortVersions(values: Iterable<string>): string {
@@ -256,7 +256,7 @@ export function aggregateVulnerabilities(
       artifact: string;
       versions: Set<string>;
       fixed_versions: Set<string>;
-      imported_at: string | null;
+      published_at: string | null;
     }
   >();
 
@@ -272,7 +272,7 @@ export function aggregateVulnerabilities(
         artifact: item.artifact,
         versions: new Set(),
         fixed_versions: new Set(),
-        imported_at: item.imported_at ?? null,
+        published_at: item.published_at ?? null,
       };
       map.set(key, entry);
     }
@@ -282,7 +282,10 @@ export function aggregateVulnerabilities(
     if (item.fixed_version) {
       entry.fixed_versions.add(item.fixed_version);
     }
-    entry.imported_at = laterImportedAt(entry.imported_at, item.imported_at);
+    entry.published_at = earlierPublishedAt(
+      entry.published_at,
+      item.published_at,
+    );
     if (item.threat_level != null) {
       if (entry.threat_level == null || item.threat_level > entry.threat_level) {
         entry.threat_level = item.threat_level;
@@ -311,7 +314,7 @@ export function aggregateVulnerabilities(
         fixed_versions,
         remark: override?.remark?.trim() || "",
         has_override: Boolean(override),
-        imported_at: entry.imported_at,
+        published_at: entry.published_at,
       };
     })
     .sort((a, b) => {
@@ -324,7 +327,7 @@ export function aggregateVulnerabilities(
     });
 }
 
-export type HealthSortKey = "threat" | "name" | "importedAt";
+export type HealthSortKey = "threat" | "name" | "importedAt" | "publishedAt";
 export type HealthSortDir = "asc" | "desc";
 
 export interface HealthSort {
@@ -381,7 +384,7 @@ export function sortAggregatedVulnerabilities(
     } else if (sort.key === "name") {
       cmp = cmpName(a.artifact, b.artifact) * dir;
     } else {
-      cmp = cmpImportedAt(a.imported_at, b.imported_at, sort.dir);
+      cmp = cmpImportedAt(a.published_at, b.published_at, sort.dir);
     }
     if (cmp !== 0) return cmp;
     const nameCmp = cmpName(a.artifact, b.artifact);
@@ -440,6 +443,8 @@ export function filterVulnerabilities(
       item.problem_code,
       item.threat_level,
       formatThreatInteger(item.threat_level),
+      item.published_at,
+      formatImportedAt(item.published_at),
       item.imported_at,
       formatImportedAt(item.imported_at),
     ]).includes(q),
@@ -480,6 +485,21 @@ export function laterImportedAt(
   if (Number.isNaN(leftMs)) return right;
   if (Number.isNaN(rightMs)) return left;
   return rightMs > leftMs ? right : left;
+}
+
+export function earlierPublishedAt(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): string | null {
+  const left = a?.trim() || "";
+  const right = b?.trim() || "";
+  if (!left) return right || null;
+  if (!right) return left;
+  const leftMs = Date.parse(left);
+  const rightMs = Date.parse(right);
+  if (Number.isNaN(leftMs)) return right;
+  if (Number.isNaN(rightMs)) return left;
+  return rightMs < leftMs ? right : left;
 }
 
 export function formatImportedAt(iso: string | null | undefined): string {

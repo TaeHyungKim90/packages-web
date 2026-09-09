@@ -960,6 +960,28 @@ button:disabled {
   background: var(--surface);
 }
 
+.health-page__refresh {
+  min-width: 2.5rem;
+  padding-left: 0.6rem;
+  padding-right: 0.6rem;
+  font-size: 1.1rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.spinner--btn {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+}
+
+.spinner--on-primary {
+  border-color: rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+}
+
 .health-page__table-wrap {
   overflow-x: auto;
 }
@@ -1261,6 +1283,14 @@ button:disabled {
 .orgs-list__empty-repo {
   color: var(--muted, #666);
   font-size: 0.875rem;
+}
+
+.proj-pkg__sync {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-width: 7.5rem;
 }
 
 .proj-pkg__search {

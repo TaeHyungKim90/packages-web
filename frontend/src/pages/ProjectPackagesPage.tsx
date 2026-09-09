@@ -94,8 +94,8 @@ export default function ProjectPackagesPage() {
     setOrgs(data.organizations.filter((o) => o.managed).map((o) => o.name));
   }, []);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (opts?: { quiet?: boolean }) => {
+    if (!opts?.quiet) setLoading(true);
     setError(null);
     try {
       const data = await fetchProjectPackages({
@@ -108,7 +108,7 @@ export default function ProjectPackagesPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoading(false);
+      if (!opts?.quiet) setLoading(false);
     }
   }, [appliedOrg, appliedName, appliedFormat]);
 
@@ -153,7 +153,7 @@ export default function ProjectPackagesPage() {
       const result = await syncProjectPackages(org || undefined);
       setCollectedAt(result.collected_at);
       setMessage(`동기화 완료 (${result.item_count}개)`);
-      await load();
+      await load({ quiet: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -168,11 +168,19 @@ export default function ProjectPackagesPage() {
         <div className="orgs-page__actions">
           <button
             type="button"
-            className="btn-primary"
+            className="btn-primary proj-pkg__sync"
             onClick={() => void handleSync()}
             disabled={loading || syncing}
+            aria-busy={syncing}
           >
-            {syncing ? "동기화 중…" : "동기화"}
+            {syncing ? (
+              <>
+                <span className="spinner spinner--btn spinner--on-primary" aria-hidden="true" />
+                동기화 중…
+              </>
+            ) : (
+              "동기화"
+            )}
           </button>
         </div>
       </div>

@@ -157,8 +157,18 @@ export async function fetchRequestStatus(
 
 export async function fetchProxyHealth(
   eco: RequestEco,
+  options?: { refresh?: boolean },
 ): Promise<ProxyHealthResponse> {
-  const res = await apiFetch(`/api/proxy-health/${eco}`);
+  const qs = options?.refresh ? "?refresh=true" : "";
+  const res = await apiFetch(`/api/proxy-health/${eco}${qs}`);
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+export async function fetchProxyHealthSnapshot(
+  eco: RequestEco,
+): Promise<ProxyHealthResponse> {
+  const res = await apiFetch(`/api/proxy-health/${eco}/snapshot`);
   if (!res.ok) throw new Error(await readError(res));
   return res.json();
 }

@@ -102,7 +102,7 @@ describe("health helpers", () => {
     expect(rows[0].fixed_versions).toBe("1.2.0, 1.3.0");
   });
 
-  it("keeps the latest imported_at when versions are merged", () => {
+  it("keeps the earliest published_at when versions are merged", () => {
     const rows = aggregateVulnerabilities([
       {
         threat_level: 5.0,
@@ -111,7 +111,7 @@ describe("health helpers", () => {
         group: "",
         artifact: "foo",
         version: "1.0.0",
-        imported_at: "2026-08-16T00:00:00+00:00",
+        published_at: "2026-08-16T00:00:00+00:00",
       },
       {
         threat_level: 5.0,
@@ -120,18 +120,18 @@ describe("health helpers", () => {
         group: "",
         artifact: "foo",
         version: "1.0.2",
-        imported_at: "2026-08-18T00:00:00+00:00",
+        published_at: "2026-08-18T00:00:00+00:00",
       },
     ]);
     expect(rows).toHaveLength(1);
     expect(rows[0].versions).toBe("1.0.0, 1.0.2");
-    expect(rows[0].imported_at).toBe("2026-08-18T00:00:00+00:00");
+    expect(rows[0].published_at).toBe("2026-08-16T00:00:00+00:00");
     expect(laterImportedAt(null, "2026-08-18T00:00:00+00:00")).toBe(
       "2026-08-18T00:00:00+00:00",
     );
   });
 
-  it("sorts aggregated vulnerabilities by threat, name, or imported date", () => {
+  it("sorts aggregated vulnerabilities by threat, name, or published date", () => {
     const rows = aggregateVulnerabilities([
       {
         threat_level: 8.1,
@@ -140,7 +140,7 @@ describe("health helpers", () => {
         group: "",
         artifact: "zeta",
         version: "1.0.0",
-        imported_at: "2026-08-01T00:00:00+00:00",
+        published_at: "2026-08-01T00:00:00+00:00",
       },
       {
         threat_level: 3.2,
@@ -149,7 +149,7 @@ describe("health helpers", () => {
         group: "",
         artifact: "alpha",
         version: "1.0.0",
-        imported_at: "2026-08-18T00:00:00+00:00",
+        published_at: "2026-08-18T00:00:00+00:00",
       },
       {
         threat_level: 5.0,
@@ -158,7 +158,7 @@ describe("health helpers", () => {
         group: "",
         artifact: "mid",
         version: "1.0.0",
-        imported_at: null,
+        published_at: null,
       },
     ]);
     expect(
@@ -173,7 +173,7 @@ describe("health helpers", () => {
     ).toEqual(["zeta", "mid", "alpha"]);
     expect(
       sortAggregatedVulnerabilities(rows, {
-        key: "importedAt",
+        key: "publishedAt",
         dir: "desc",
       }).map((r) => r.artifact),
     ).toEqual(["alpha", "zeta", "mid"]);

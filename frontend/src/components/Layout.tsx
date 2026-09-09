@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
 import type { useAuth } from "../hooks/useAuth";
+import { useIdleReload } from "../hooks/useIdleReload";
 import Header from "./Header";
 
 interface Props {
@@ -13,6 +14,7 @@ export default function Layout({ health, auth, children }: Props) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const isLogin = pathname === "/login";
+  useIdleReload(auth.isAuthenticated && !isLogin);
 
   const dotClass =
     health === "ok"

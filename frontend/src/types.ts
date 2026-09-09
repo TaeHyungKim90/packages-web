@@ -114,6 +114,7 @@ export interface ProxyHealthVulnerability {
   artifact: string;
   version: string;
   imported_at?: string | null;
+  published_at?: string | null;
   fixed_version?: string | null;
   in_hosted?: boolean;
 }
@@ -149,6 +150,7 @@ export interface ProxyHealthResponse {
   ecosystem: string;
   repository: string;
   generated_at: string | null;
+  fetched_at?: string | null;
   vulnerabilities: ProxyHealthVulnerability[];
   licenses: ProxyHealthLicense[];
   vulnerability_overrides?: ProxyHealthVulnOverride[];

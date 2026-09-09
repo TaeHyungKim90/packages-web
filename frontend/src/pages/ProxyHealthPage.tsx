@@ -3,10 +3,12 @@ import * as XLSX from "xlsx";
 import {
   deleteProxyHealthOverride,
   fetchProxyHealth,
+  fetchProxyHealthSnapshot,
   updateProxyHealthOverride,
 } from "../api/client";
 import Pagination from "../components/Pagination";
 import VulnOverrideModal from "../components/VulnOverrideModal";
+import { useAuth } from "../hooks/useAuth";
 import type {
   PackageType,
   ProxyHealthResponse,
@@ -83,6 +85,8 @@ function SortHeader({
 }
 
 export default function ProxyHealthPage({ packageType }: Props) {
+  const auth = useAuth();
+  const canEdit = Boolean(auth.user?.can_request);
   const [data, setData] = useState<ProxyHealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -95,18 +99,51 @@ export default function ProxyHealthPage({ packageType }: Props) {
   const [editRow, setEditRow] = useState<AggregatedVulnerability | null>(null);
   const [modalSaving, setModalSaving] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const loadData = useCallback(async () => {
+    if (auth.isLoading || !auth.isAuthenticated) return;
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchProxyHealth(packageType);
+      const result = canEdit
+        ? await fetchProxyHealth(packageType)
+        : await fetchProxyHealthSnapshot(packageType);
       setData(result);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
       setData(null);
     } finally {
       setLoading(false);
+    }
+  }, [
+    packageType,
+    canEdit,
+    auth.isLoading,
+    auth.isAuthenticated,
+  ]);
+
+  const forceRefresh = useCallback(async () => {
+    if (!canEdit || refreshing) return;
+    setRefreshing(true);
+    setError(null);
+    try {
+      const result = await fetchProxyHealth(packageType, { refresh: true });
+      setData(result);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRefreshing(false);
+    }
+  }, [canEdit, packageType, refreshing]);
+
+  const reloadFromDb = useCallback(async () => {
+    setModalError(null);
+    try {
+      const result = await fetchProxyHealthSnapshot(packageType);
+      setData(result);
+    } catch (err: unknown) {
+      setModalError(err instanceof Error ? err.message : String(err));
     }
   }, [packageType]);
 
@@ -118,6 +155,9 @@ export default function ProxyHealthPage({ packageType }: Props) {
     setImportFilter("all");
     setSort(DEFAULT_HEALTH_SORT);
     setEditRow(null);
+  }, [packageType]);
+
+  useEffect(() => {
     void loadData();
   }, [loadData]);
 
@@ -194,7 +234,9 @@ export default function ProxyHealthPage({ packageType }: Props) {
     setSort((current) => nextHealthSort(current, key));
   };
 
-  const reportTime = formatReportTime(data?.generated_at ?? null);
+  const reportTime = formatReportTime(
+    data?.fetched_at ?? data?.generated_at ?? null,
+  );
   const showGroup = Boolean(
     data?.vulnerabilities.some((r) => r.group) ||
       data?.licenses.some((r) => r.group),
@@ -218,7 +260,7 @@ export default function ProxyHealthPage({ packageType }: Props) {
         remark,
       });
       setEditRow(null);
-      await loadData();
+      await reloadFromDb();
     } catch (err: unknown) {
       setModalError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -236,7 +278,7 @@ export default function ProxyHealthPage({ packageType }: Props) {
         artifact: editRow.artifact,
       });
       setEditRow(null);
-      await loadData();
+      await reloadFromDb();
     } catch (err: unknown) {
       setModalError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -268,7 +310,7 @@ export default function ProxyHealthPage({ packageType }: Props) {
         out["버전"] = row.versions || "";
         out["해결 버전"] = formatFixedVersions(row.fixed_versions);
         out["비고"] = row.remark || "";
-        out["반입 날짜"] = formatImportedAt(row.imported_at) || "";
+        out["공개일"] = formatImportedAt(row.published_at) || "";
         return out;
       });
     } else {
@@ -328,7 +370,9 @@ export default function ProxyHealthPage({ packageType }: Props) {
         </div>
       )}
 
-      {error && !loading && <div className="result__error">{error}</div>}
+      {error && !loading && !refreshing && (
+        <div className="result__error">{error}</div>
+      )}
 
       {data && !loading && !error && (
         <>
@@ -337,7 +381,7 @@ export default function ProxyHealthPage({ packageType }: Props) {
             {reportTime && (
               <>
                 {" "}
-                · 분석 시각 <strong>{reportTime}</strong>
+                · 갱신 시각 <strong>{reportTime}</strong>
               </>
             )}
             {" · "}
@@ -395,10 +439,29 @@ export default function ProxyHealthPage({ packageType }: Props) {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
+            {canEdit && (
+              <button
+                type="button"
+                className="btn-secondary health-page__refresh"
+                disabled={loading || refreshing}
+                title="Nexus/OSV에서 지금 다시 가져오기"
+                aria-label="취약점 목록 새로고침"
+                aria-busy={refreshing}
+                onClick={() => void forceRefresh()}
+              >
+                {refreshing ? (
+                  <span className="spinner spinner--btn" aria-hidden="true" />
+                ) : (
+                  "♻️"
+                )}
+              </button>
+            )}
             <button
               type="button"
               className="btn-secondary"
-              disabled={!data || loading || Boolean(error) || activeCount === 0}
+              disabled={
+                !data || loading || refreshing || Boolean(error) || activeCount === 0
+              }
               onClick={downloadExcel}
             >
               엑셀 다운로드
@@ -430,12 +493,12 @@ export default function ProxyHealthPage({ packageType }: Props) {
                     <th>해결 버전</th>
                     <th>비고</th>
                     <SortHeader
-                      label="반입 날짜"
-                      column="importedAt"
+                      label="공개일"
+                      column="publishedAt"
                       sort={sort}
                       onSort={changeSort}
                     />
-                    <th>수정</th>
+                    {canEdit && <th>수정</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -467,19 +530,21 @@ export default function ProxyHealthPage({ packageType }: Props) {
                         <td>{row.versions || "—"}</td>
                         <td>{formatFixedVersions(row.fixed_versions)}</td>
                         <td>{row.remark || "—"}</td>
-                        <td>{formatImportedAt(row.imported_at) || "—"}</td>
-                        <td>
-                          <button
-                            type="button"
-                            className="btn-text"
-                            onClick={() => {
-                              setModalError(null);
-                              setEditRow(row);
-                            }}
-                          >
-                            수정
-                          </button>
-                        </td>
+                        <td>{formatImportedAt(row.published_at) || "—"}</td>
+                        {canEdit && (
+                          <td>
+                            <button
+                              type="button"
+                              className="btn-text"
+                              onClick={() => {
+                                setModalError(null);
+                                setEditRow(row);
+                              }}
+                            >
+                              수정
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -546,15 +611,17 @@ export default function ProxyHealthPage({ packageType }: Props) {
         </>
       )}
 
-      <VulnOverrideModal
-        open={editRow != null}
-        row={editRow}
-        saving={modalSaving}
-        error={modalError}
-        onClose={closeModal}
-        onSave={handleSaveOverride}
-        onRevert={handleRevertOverride}
-      />
+      {canEdit && (
+        <VulnOverrideModal
+          open={editRow != null}
+          row={editRow}
+          saving={modalSaving}
+          error={modalError}
+          onClose={closeModal}
+          onSave={handleSaveOverride}
+          onRevert={handleRevertOverride}
+        />
+      )}
     </div>
   );
 }

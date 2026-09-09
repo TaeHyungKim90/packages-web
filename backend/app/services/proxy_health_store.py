@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import UTC, datetime
 
+from app.config import settings
 from app.db import connect
 from app.schemas import (
     ProxyHealthLicense,
@@ -12,11 +13,40 @@ from app.schemas import (
     ProxyHealthVulnOverrideUpdate,
 )
 from app.services.nexus_health import fetch_proxy_health
-from app.services.osv import _is_newer, enrich_fixed_versions, is_package_fixed_version
+from app.services.osv import (
+    _is_newer,
+    enrich_fixed_versions,
+    is_package_fixed_version,
+    is_resolved_or_false_positive,
+)
 
 
 def _row_bool(value: object) -> bool:
     return bool(value) if value is not None else False
+
+
+def _parse_fetched_at(value: str | None) -> datetime | None:
+    text = (value or "").strip()
+    if not text:
+        return None
+    try:
+        ts = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=UTC)
+    return ts
+
+
+def cache_is_fresh(fetched_at: str | None, ttl_seconds: int | None = None) -> bool:
+    ttl = settings.proxy_health_ttl_seconds if ttl_seconds is None else ttl_seconds
+    if ttl <= 0:
+        return False
+    ts = _parse_fetched_at(fetched_at)
+    if ts is None:
+        return False
+    age = (datetime.now(tz=UTC) - ts).total_seconds()
+    return age < ttl
 
 
 def _load_report(conn: sqlite3.Connection, ecosystem: str) -> ProxyHealthResponse | None:
@@ -30,11 +60,14 @@ def _load_report(conn: sqlite3.Connection, ecosystem: str) -> ProxyHealthRespons
     vulnerabilities: list[ProxyHealthVulnerability] = []
     for row in conn.execute(
         "SELECT threat_level, problem_code, problem_url, group_name, "
-        "artifact, version, imported_at, fixed_version, in_hosted "
+        "artifact, version, imported_at, published_at, fixed_version, in_hosted "
         "FROM proxy_health_vulnerability WHERE ecosystem = ?",
         (ecosystem,),
     ):
         raw_fixed = row["fixed_version"] if "fixed_version" in row.keys() else None
+        raw_published = (
+            row["published_at"] if "published_at" in row.keys() else None
+        )
         vulnerabilities.append(
             ProxyHealthVulnerability(
                 threat_level=row["threat_level"],
@@ -44,6 +77,7 @@ def _load_report(conn: sqlite3.Connection, ecosystem: str) -> ProxyHealthRespons
                 artifact=row["artifact"],
                 version=row["version"],
                 imported_at=row["imported_at"],
+                published_at=raw_published,
                 fixed_version=raw_fixed if is_package_fixed_version(raw_fixed) else None,
                 in_hosted=_row_bool(row["in_hosted"] if "in_hosted" in row.keys() else 0),
             )
@@ -71,6 +105,7 @@ def _load_report(conn: sqlite3.Connection, ecosystem: str) -> ProxyHealthRespons
         ecosystem=ecosystem,
         repository=meta["repository"],
         generated_at=meta["generated_at"],
+        fetched_at=meta["fetched_at"],
         vulnerabilities=vulnerabilities,
         licenses=licenses,
     )
@@ -78,7 +113,7 @@ def _load_report(conn: sqlite3.Connection, ecosystem: str) -> ProxyHealthRespons
 
 def save_proxy_health_to_conn(
     conn: sqlite3.Connection, report: ProxyHealthResponse
-) -> None:
+) -> str:
     eco = report.ecosystem
     fetched_at = datetime.now(tz=UTC).isoformat()
     conn.execute("DELETE FROM proxy_health_meta WHERE ecosystem = ?", (eco,))
@@ -92,8 +127,8 @@ def save_proxy_health_to_conn(
         conn.execute(
             "INSERT INTO proxy_health_vulnerability "
             "(ecosystem, threat_level, problem_code, problem_url, group_name, "
-            "artifact, version, imported_at, fixed_version, in_hosted) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "artifact, version, imported_at, published_at, fixed_version, in_hosted) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 eco,
                 item.threat_level,
@@ -103,6 +138,7 @@ def save_proxy_health_to_conn(
                 item.artifact,
                 item.version,
                 item.imported_at,
+                item.published_at,
                 item.fixed_version,
                 1 if item.in_hosted else 0,
             ),
@@ -126,6 +162,7 @@ def save_proxy_health_to_conn(
                 1 if item.in_hosted else 0,
             ),
         )
+    return fetched_at
 
 
 def load_all_cached_reports(
@@ -306,18 +343,46 @@ def _finalize_report(
     overrides: list[ProxyHealthVulnOverride],
 ) -> ProxyHealthResponse:
     override_map = vuln_override_map(overrides)
+    applied = apply_vuln_overrides(report.vulnerabilities, override_map)
+    vulns = [
+        item
+        for item in applied
+        if not is_resolved_or_false_positive(
+            item.version,
+            item.fixed_version,
+            remark=(
+                override_map[(item.problem_code, item.artifact)].remark
+                if (item.problem_code, item.artifact) in override_map
+                else None
+            ),
+        )
+    ]
     return report.model_copy(
         update={
-            "vulnerabilities": apply_vuln_overrides(
-                report.vulnerabilities, override_map
-            ),
+            "vulnerabilities": vulns,
             "vulnerability_overrides": overrides,
         }
     )
 
 
-async def get_proxy_health_cached(ecosystem: str) -> ProxyHealthResponse:
-    """Nexus 목록 + DB에 있는 해결 버전 재사용, 없는 행만 OSV 조회."""
+def get_proxy_health_from_db(ecosystem: str) -> ProxyHealthResponse:
+    """저장된 DB 스냅샷과 override만 반영해 반환 (Nexus/OSV 조회 없음)."""
+    key = ecosystem.lower().strip()
+    conn = connect()
+    try:
+        report = _load_report(conn, key)
+        if report is None:
+            raise LookupError(f"No cached proxy health data for ecosystem: {key}")
+        overrides = load_vuln_overrides(conn, key)
+        return _finalize_report(report, overrides)
+    finally:
+        conn.close()
+
+
+async def get_proxy_health_cached(
+    ecosystem: str, *, force_refresh: bool = False
+) -> ProxyHealthResponse:
+    """TTL 안이면 DB 스냅샷, 만료/force 시 Nexus + OSV 후 저장."""
     key = ecosystem.lower().strip()
     cached: ProxyHealthResponse | None = None
     fixed_index: dict[tuple[str, str, str], str] = {}
@@ -329,6 +394,13 @@ async def get_proxy_health_cached(ecosystem: str) -> ProxyHealthResponse:
         overrides = load_vuln_overrides(conn, key)
     finally:
         conn.close()
+
+    if (
+        cached is not None
+        and not force_refresh
+        and cache_is_fresh(cached.fetched_at)
+    ):
+        return _finalize_report(cached, overrides)
 
     override_map = vuln_override_map(overrides)
     skip_keys = set(override_map.keys())
@@ -352,11 +424,14 @@ async def get_proxy_health_cached(ecosystem: str) -> ProxyHealthResponse:
 
     conn = connect()
     try:
-        save_proxy_health_to_conn(conn, fresh)
+        fetched_at = save_proxy_health_to_conn(conn, fresh)
         conn.commit()
     finally:
         conn.close()
-    return fresh
+    return _finalize_report(
+        fresh.model_copy(update={"fetched_at": fetched_at}),
+        overrides,
+    )
 
 
 async def ensure_all_proxy_health_cached() -> None:

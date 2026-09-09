@@ -19,10 +19,17 @@ ECOSYSTEM_OSV: dict[str, str] = {
 }
 
 OSV_TIMEOUT = 60.0
+NVD_TIMEOUT = 30.0
 QUERY_CONCURRENCY = 8
+NVD_CONCURRENCY = 2
 
 _VERSION_PART = re.compile(r"(\d+|\D+)")
 _GIT_SHA = re.compile(r"^[0-9a-f]{7,40}$", re.IGNORECASE)
+_CVE_ID = re.compile(r"^CVE-\d{4}-\d+$", re.IGNORECASE)
+_FALSE_POSITIVE = re.compile(
+    r"(오탐|해당\s*없|해당없음|false\s*positive|\bn/?a\b)",
+    re.IGNORECASE,
+)
 
 
 def is_package_fixed_version(value: str | None) -> bool:
@@ -33,6 +40,40 @@ def is_package_fixed_version(value: str | None) -> bool:
     if _GIT_SHA.fullmatch(text):
         return False
     return True
+
+
+def _normalize_published_at(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        return text[:-1] + "+00:00"
+    return text
+
+
+def _published_from_doc(doc: dict[str, Any] | None) -> str | None:
+    if not doc:
+        return None
+    return _normalize_published_at(doc.get("published"))
+
+
+def _published_from_docs(
+    docs: list[dict[str, Any]], *, problem_code: str
+) -> str | None:
+    want = (problem_code or "").strip().upper()
+    for doc in docs:
+        if want and want not in _vuln_ids(doc) and str(doc.get("id") or "").upper() != want:
+            continue
+        got = _published_from_doc(doc)
+        if got:
+            return got
+    for doc in docs:
+        got = _published_from_doc(doc)
+        if got:
+            return got
+    return None
 
 
 def _version_key(value: str) -> tuple:
@@ -50,6 +91,45 @@ def _is_newer(candidate: str, current: str) -> bool:
         return _version_key(candidate) > _version_key(current)
     except Exception:
         return candidate != current
+
+
+def _version_major(version: str) -> str | None:
+    match = re.match(r"^v?(\d+)", (version or "").strip(), re.IGNORECASE)
+    return match.group(1) if match else None
+
+
+def is_resolved_or_false_positive(
+    version: str,
+    fixed_version: str | None,
+    *,
+    remark: str | None = None,
+) -> bool:
+    """True when the listed version is already fixed (정상) or marked 오탐."""
+    if remark and _FALSE_POSITIVE.search(remark):
+        return True
+    text = (fixed_version or "").strip()
+    if not text:
+        return False
+    if _FALSE_POSITIVE.search(text):
+        return True
+    ver = (version or "").strip()
+    if not ver:
+        return False
+    for part in re.split(r"[,;/|]", text):
+        fixed = part.strip()
+        if not fixed:
+            continue
+        if _FALSE_POSITIVE.search(fixed):
+            return True
+        if not is_package_fixed_version(fixed):
+            continue
+        maj_f, maj_v = _version_major(fixed), _version_major(ver)
+        if maj_f and maj_v and maj_f != maj_v:
+            continue
+        # version >= fixed → already on the patched line
+        if not _is_newer(fixed, ver):
+            return True
+    return False
 
 
 def _pick_fixed(current: str, fixed_values: list[str]) -> str | None:
@@ -510,6 +590,7 @@ async def _enrich_with_client(
     query_keys: list[tuple[str, str]],
     key_to_indexes: dict[tuple[str, str], list[int]],
     fixed_by_index: dict[int, str | None],
+    published_by_index: dict[int, str | None],
 ) -> None:
     sem = asyncio.Semaphore(QUERY_CONCURRENCY)
     vuln_cache: dict[str, dict[str, Any] | None] = {}
@@ -567,6 +648,146 @@ async def _enrich_with_client(
                         registry_cache=registry_cache,
                     )
                 fixed_by_index[idx] = fixed
+                if not published_by_index.get(idx):
+                    published_by_index[idx] = _published_from_docs(
+                        docs, problem_code=item.problem_code
+                    )
+
+        await _fill_missing_published(
+            client,
+            vulns=vulns,
+            published_by_index=published_by_index,
+            sem=sem,
+            cache=vuln_cache,
+        )
+
+
+def _indexes_needing_published(
+    vulns: list[ProxyHealthVulnerability],
+    published_by_index: dict[int, str | None],
+) -> dict[str, list[int]]:
+    need_codes: dict[str, list[int]] = {}
+    for i, item in enumerate(vulns):
+        if published_by_index.get(i) or item.published_at:
+            if item.published_at and not published_by_index.get(i):
+                published_by_index[i] = item.published_at
+            continue
+        code = (item.problem_code or "").strip()
+        if not code:
+            continue
+        need_codes.setdefault(code.upper(), []).append(i)
+    return need_codes
+
+
+async def _fetch_nvd_published(
+    client: httpx.AsyncClient,
+    cve_id: str,
+    sem: asyncio.Semaphore,
+    cache: dict[str, str | None],
+) -> str | None:
+    key = cve_id.strip().upper()
+    if not key or not _CVE_ID.fullmatch(key):
+        return None
+    if key in cache:
+        return cache[key]
+    if not settings.nvd_enabled:
+        cache[key] = None
+        return None
+
+    base = settings.nvd_base_url.rstrip("/")
+    headers: dict[str, str] = {}
+    api_key = (settings.nvd_api_key or "").strip()
+    if api_key:
+        headers["apiKey"] = api_key
+    try:
+        async with sem:
+            response = await client.get(
+                base,
+                params={"cveId": key},
+                headers=headers,
+                timeout=NVD_TIMEOUT,
+            )
+            if response.status_code == 404:
+                cache[key] = None
+                return None
+            response.raise_for_status()
+            data = response.json()
+    except Exception as exc:
+        logger.warning("NVD CVE fetch failed for %s: %s", key, exc)
+        cache[key] = None
+        return None
+
+    published: str | None = None
+    if isinstance(data, dict):
+        items = data.get("vulnerabilities") or []
+        if isinstance(items, list) and items:
+            first = items[0]
+            if isinstance(first, dict):
+                cve = first.get("cve")
+                if isinstance(cve, dict):
+                    published = _normalize_published_at(cve.get("published"))
+    cache[key] = published
+    return published
+
+
+async def _fill_missing_published_from_nvd(
+    client: httpx.AsyncClient,
+    *,
+    vulns: list[ProxyHealthVulnerability],
+    published_by_index: dict[int, str | None],
+) -> None:
+    if not settings.nvd_enabled:
+        return
+    need_codes = _indexes_needing_published(vulns, published_by_index)
+    cve_codes = {
+        code: indexes
+        for code, indexes in need_codes.items()
+        if _CVE_ID.fullmatch(code)
+    }
+    if not cve_codes:
+        return
+
+    sem = asyncio.Semaphore(NVD_CONCURRENCY)
+    cache: dict[str, str | None] = {}
+
+    async def _one(code: str) -> tuple[str, str | None]:
+        return code, await _fetch_nvd_published(client, code, sem, cache)
+
+    fetched = await asyncio.gather(*(_one(code) for code in cve_codes))
+    for code, published in fetched:
+        if not published:
+            continue
+        for idx in cve_codes[code]:
+            published_by_index[idx] = published
+
+
+async def _fill_missing_published(
+    client: httpx.AsyncClient,
+    *,
+    vulns: list[ProxyHealthVulnerability],
+    published_by_index: dict[int, str | None],
+    sem: asyncio.Semaphore,
+    cache: dict[str, dict[str, Any] | None],
+) -> None:
+    need_codes = _indexes_needing_published(vulns, published_by_index)
+    if need_codes:
+
+        async def _one(code: str) -> tuple[str, str | None]:
+            doc = await _fetch_vuln(client, code, sem, cache)
+            return code, _published_from_doc(doc)
+
+        fetched = await asyncio.gather(*(_one(code) for code in need_codes))
+        for code, published in fetched:
+            if not published:
+                continue
+            for idx in need_codes[code]:
+                published_by_index[idx] = published
+
+    await _fill_missing_published_from_nvd(
+        client,
+        vulns=vulns,
+        published_by_index=published_by_index,
+    )
 
 
 async def enrich_fixed_versions(
@@ -575,7 +796,7 @@ async def enrich_fixed_versions(
     *,
     skip_override_keys: set[tuple[str, str]] | None = None,
 ) -> list[ProxyHealthVulnerability]:
-    """Attach fixed_version from OSV for rows that do not already have one."""
+    """Attach fixed_version and published_at from OSV (NVD fallback for CVE published)."""
     if not settings.osv_enabled or not vulns:
         return list(vulns)
 
@@ -587,7 +808,9 @@ async def enrich_fixed_versions(
     key_to_indexes: dict[tuple[str, str], list[int]] = {}
     query_keys: list[tuple[str, str]] = []
     fixed_by_index: dict[int, str | None] = {}
+    published_by_index: dict[int, str | None] = {}
     for i, item in enumerate(vulns):
+        published_by_index[i] = item.published_at
         if (item.problem_code, item.artifact) in skip:
             fixed_by_index[i] = item.fixed_version
             continue
@@ -606,15 +829,43 @@ async def enrich_fixed_versions(
         key_to_indexes[key].append(i)
         fixed_by_index[i] = None
 
+    # Always attempt published fill (even when fixed versions are already known).
     if not query_keys:
+        verify_flags: list[bool] = [bool(settings.osv_verify_ssl)]
+        if settings.osv_verify_ssl:
+            verify_flags.append(False)
+        for verify in verify_flags:
+            try:
+                sem = asyncio.Semaphore(QUERY_CONCURRENCY)
+                cache: dict[str, dict[str, Any] | None] = {}
+                async with httpx.AsyncClient(verify=verify) as client:
+                    await _fill_missing_published(
+                        client,
+                        vulns=vulns,
+                        published_by_index=published_by_index,
+                        sem=sem,
+                        cache=cache,
+                    )
+                break
+            except Exception as exc:
+                logger.warning(
+                    "OSV published fill failed (verify=%s): %s", verify, exc
+                )
         return [
-            v
-            if (v.fixed_version and is_package_fixed_version(v.fixed_version))
-            else v.model_copy(update={"fixed_version": None})
-            for v in vulns
+            v.model_copy(
+                update={
+                    "fixed_version": (
+                        v.fixed_version
+                        if (v.fixed_version and is_package_fixed_version(v.fixed_version))
+                        else None
+                    ),
+                    "published_at": published_by_index.get(i),
+                }
+            )
+            for i, v in enumerate(vulns)
         ]
 
-    verify_flags: list[bool] = [bool(settings.osv_verify_ssl)]
+    verify_flags = [bool(settings.osv_verify_ssl)]
     if settings.osv_verify_ssl:
         verify_flags.append(False)
 
@@ -628,6 +879,7 @@ async def enrich_fixed_versions(
                 query_keys=query_keys,
                 key_to_indexes=key_to_indexes,
                 fixed_by_index=fixed_by_index,
+                published_by_index=published_by_index,
             )
             last_exc = None
             break
@@ -638,6 +890,11 @@ async def enrich_fixed_versions(
         logger.warning("OSV enrichment skipped after retries: %s", last_exc)
 
     return [
-        v.model_copy(update={"fixed_version": fixed_by_index.get(i)})
+        v.model_copy(
+            update={
+                "fixed_version": fixed_by_index.get(i),
+                "published_at": published_by_index.get(i),
+            }
+        )
         for i, v in enumerate(vulns)
     ]

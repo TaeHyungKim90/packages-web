@@ -105,6 +105,7 @@ class ProxyHealthVulnerability(BaseModel):
     artifact: str
     version: str
     imported_at: str | None = None
+    published_at: str | None = None
     fixed_version: str | None = None
     in_hosted: bool = False
 
@@ -145,6 +146,7 @@ class ProxyHealthResponse(BaseModel):
     ecosystem: str
     repository: str
     generated_at: str | None = None
+    fetched_at: str | None = None
     vulnerabilities: list[ProxyHealthVulnerability] = Field(default_factory=list)
     licenses: list[ProxyHealthLicense] = Field(default_factory=list)
     vulnerability_overrides: list[ProxyHealthVulnOverride] = Field(

@@ -12,6 +12,7 @@ from app.services.proxy_health_store import (
     apply_vuln_overrides,
     delete_vuln_override,
     get_proxy_health_cached,
+    get_proxy_health_from_db,
     load_vuln_overrides,
     save_proxy_health_to_conn,
     save_vuln_override,
@@ -87,13 +88,14 @@ async def test_get_proxy_health_reuses_db_fixed_and_osv_only_missing(monkeypatch
         "app.services.proxy_health_store.enrich_fixed_versions",
         _enrich,
     )
-    result = await get_proxy_health_cached("pypi")
+    result = await get_proxy_health_cached("pypi", force_refresh=True)
     assert result.repository == "pypi-proxy-health"
     by_name = {v.artifact: v.fixed_version for v in result.vulnerabilities}
     assert by_name["foo"] == "1.2.0"
     assert by_name["bar"] == "9.9.9"
     assert seen[0][0].fixed_version == "1.2.0"
     assert seen[0][1].fixed_version is None
+    assert result.fetched_at
 
 
 def test_apply_fixed_versions_from_index():
@@ -171,7 +173,7 @@ async def test_get_proxy_health_falls_back_to_db_on_nexus_error(monkeypatch):
         "app.services.proxy_health_store.fetch_proxy_health",
         _fail,
     )
-    result = await get_proxy_health_cached("pypi")
+    result = await get_proxy_health_cached("pypi", force_refresh=True)
     assert result.repository == "cached-repo"
 
 
@@ -274,3 +276,182 @@ def test_save_and_delete_vuln_override():
     conn.commit()
     assert load_vuln_overrides(conn, "pypi") == []
     conn.close()
+
+
+def test_get_proxy_health_from_db_applies_overrides():
+    conn = connect()
+    init_schema(conn)
+    save_proxy_health_to_conn(
+        conn,
+        ProxyHealthResponse(
+            ecosystem="pypi",
+            repository="pypi-proxy-health",
+            generated_at="2026-01-01T00:00:00+00:00",
+            vulnerabilities=[
+                ProxyHealthVulnerability(
+                    threat_level=9,
+                    problem_code="CVE-1",
+                    problem_url="",
+                    group="",
+                    artifact="pkg-a",
+                    version="1.0.0",
+                    imported_at=None,
+                    fixed_version="1.1.0",
+                )
+            ],
+            licenses=[],
+        ),
+    )
+    save_vuln_override(
+        conn,
+        "pypi",
+        ProxyHealthVulnOverrideUpdate(
+            problem_code="CVE-1",
+            artifact="pkg-a",
+            fixed_version="2.0.0",
+            remark="manual",
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    report = get_proxy_health_from_db("pypi")
+    assert report.repository == "pypi-proxy-health"
+    assert report.vulnerabilities[0].fixed_version == "2.0.0"
+    assert report.vulnerability_overrides[0].remark == "manual"
+
+
+def test_get_proxy_health_from_db_missing_raises():
+    with pytest.raises(LookupError):
+        get_proxy_health_from_db("pypi")
+
+
+@pytest.mark.asyncio
+async def test_get_proxy_health_uses_ttl_cache(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.proxy_health_store.settings.proxy_health_ttl_seconds",
+        7200,
+    )
+    conn = connect()
+    init_schema(conn)
+    save_proxy_health_to_conn(
+        conn,
+        ProxyHealthResponse(
+            ecosystem="pypi",
+            repository="cached-fresh",
+            generated_at="2026-01-01T00:00:00+00:00",
+            vulnerabilities=[],
+            licenses=[],
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    async def _fetch(_eco: str):
+        raise AssertionError("should not fetch while TTL is fresh")
+
+    monkeypatch.setattr(
+        "app.services.proxy_health_store.fetch_proxy_health",
+        _fetch,
+    )
+    result = await get_proxy_health_cached("pypi")
+    assert result.repository == "cached-fresh"
+    assert result.fetched_at
+
+
+@pytest.mark.asyncio
+async def test_get_proxy_health_force_refresh_bypasses_ttl(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.proxy_health_store.settings.proxy_health_ttl_seconds",
+        7200,
+    )
+    conn = connect()
+    init_schema(conn)
+    save_proxy_health_to_conn(
+        conn,
+        ProxyHealthResponse(
+            ecosystem="pypi",
+            repository="old-cache",
+            generated_at="2026-01-01T00:00:00+00:00",
+            vulnerabilities=[],
+            licenses=[],
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    async def _fetch(_eco: str):
+        return ProxyHealthResponse(
+            ecosystem="pypi",
+            repository="live-repo",
+            generated_at="2026-09-08T00:00:00+00:00",
+            vulnerabilities=[],
+            licenses=[],
+        )
+
+    async def _enrich(_eco: str, vulns, **kwargs):
+        return vulns
+
+    monkeypatch.setattr(
+        "app.services.proxy_health_store.fetch_proxy_health",
+        _fetch,
+    )
+    monkeypatch.setattr(
+        "app.services.proxy_health_store.enrich_fixed_versions",
+        _enrich,
+    )
+    result = await get_proxy_health_cached("pypi", force_refresh=True)
+    assert result.repository == "live-repo"
+    assert result.fetched_at
+
+
+@pytest.mark.asyncio
+async def test_get_proxy_health_expired_ttl_refetches(monkeypatch):
+    from datetime import timedelta
+
+    monkeypatch.setattr(
+        "app.services.proxy_health_store.settings.proxy_health_ttl_seconds",
+        60,
+    )
+    conn = connect()
+    init_schema(conn)
+    save_proxy_health_to_conn(
+        conn,
+        ProxyHealthResponse(
+            ecosystem="pypi",
+            repository="stale-cache",
+            generated_at="2026-01-01T00:00:00+00:00",
+            vulnerabilities=[],
+            licenses=[],
+        ),
+    )
+    stale = (datetime.now(tz=UTC) - timedelta(hours=3)).isoformat()
+    conn.execute(
+        "UPDATE proxy_health_meta SET fetched_at = ? WHERE ecosystem = ?",
+        (stale, "pypi"),
+    )
+    conn.commit()
+    conn.close()
+
+    async def _fetch(_eco: str):
+        return ProxyHealthResponse(
+            ecosystem="pypi",
+            repository="refetched",
+            generated_at="2026-09-08T00:00:00+00:00",
+            vulnerabilities=[],
+            licenses=[],
+        )
+
+    async def _enrich(_eco: str, vulns, **kwargs):
+        return vulns
+
+    monkeypatch.setattr(
+        "app.services.proxy_health_store.fetch_proxy_health",
+        _fetch,
+    )
+    monkeypatch.setattr(
+        "app.services.proxy_health_store.enrich_fixed_versions",
+        _enrich,
+    )
+    result = await get_proxy_health_cached("pypi")
+    assert result.repository == "refetched"

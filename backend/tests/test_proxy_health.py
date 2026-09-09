@@ -17,16 +17,26 @@ from main import app
 client = TestClient(app)
 
 
-def _authed_client() -> TestClient:
+def _authed_client(login: str = "tester") -> TestClient:
     from starlette.responses import Response
 
     res = Response()
-    set_session_cookie(res, SessionUser(login="tester", name="Tester", avatar_url=None))
+    set_session_cookie(
+        res, SessionUser(login=login, name=login, avatar_url=None)
+    )
     cookie_header = res.headers.get("set-cookie", "")
     name = settings.session_cookie_name
     value = cookie_header.split("=", 1)[1].split(";", 1)[0]
     client.cookies.set(name, value)
     return client
+
+
+def _patch_owner(monkeypatch, *, is_owner: bool) -> None:
+    async def _check(_login: str) -> bool:
+        return is_owner
+
+    monkeypatch.setattr("app.routers.proxy_health.github.is_org_owner", _check)
+    monkeypatch.setattr("app.deps.github.is_org_owner", _check)
 
 
 def test_map_vulnerability_npm():
@@ -465,8 +475,11 @@ def test_proxy_health_rejects_unknown_eco():
 
 
 def test_proxy_health_success(monkeypatch):
-    async def _fake(eco: str) -> ProxyHealthResponse:
+    _patch_owner(monkeypatch, is_owner=True)
+
+    async def _fake(eco: str, *, force_refresh: bool = False) -> ProxyHealthResponse:
         assert eco == "nuget"
+        assert force_refresh is False
         return ProxyHealthResponse(
             ecosystem=eco,
             repository="nuget-proxy-health",
@@ -484,8 +497,140 @@ def test_proxy_health_success(monkeypatch):
     assert response.json()["repository"] == "nuget-proxy-health"
 
 
+def test_proxy_health_refresh_query_forces_live(monkeypatch):
+    _patch_owner(monkeypatch, is_owner=True)
+    seen = {"refresh": None}
+
+    async def _fake(eco: str, *, force_refresh: bool = False) -> ProxyHealthResponse:
+        seen["refresh"] = force_refresh
+        return ProxyHealthResponse(
+            ecosystem=eco,
+            repository="nuget-proxy-health",
+            generated_at="2026-01-01T00:00:00+00:00",
+            fetched_at="2026-09-08T00:00:00+00:00",
+            vulnerabilities=[],
+            licenses=[],
+        )
+
+    monkeypatch.setattr(
+        "app.routers.proxy_health.get_proxy_health_cached", _fake
+    )
+    c = _authed_client()
+    response = c.get("/api/proxy-health/nuget?refresh=true")
+    assert response.status_code == 200
+    assert seen["refresh"] is True
+    assert response.json()["fetched_at"] == "2026-09-08T00:00:00+00:00"
+
+
+def test_proxy_health_member_reads_db_only(monkeypatch):
+    _patch_owner(monkeypatch, is_owner=False)
+    cached_called = {"value": False}
+
+    async def _cached(_eco: str) -> ProxyHealthResponse:
+        cached_called["value"] = True
+        raise AssertionError("member must not call get_proxy_health_cached")
+
+    def _from_db(eco: str) -> ProxyHealthResponse:
+        assert eco == "pypi"
+        return ProxyHealthResponse(
+            ecosystem=eco,
+            repository="pypi-proxy-health",
+            generated_at="2026-01-01T00:00:00+00:00",
+            vulnerabilities=[],
+            licenses=[],
+            vulnerability_overrides=[],
+        )
+
+    monkeypatch.setattr(
+        "app.routers.proxy_health.get_proxy_health_cached", _cached
+    )
+    monkeypatch.setattr(
+        "app.routers.proxy_health.get_proxy_health_from_db", _from_db
+    )
+    c = _authed_client(login="member")
+    response = c.get("/api/proxy-health/pypi")
+    assert response.status_code == 200
+    assert response.json()["repository"] == "pypi-proxy-health"
+    assert cached_called["value"] is False
+
+
+def test_proxy_health_member_db_missing_404(monkeypatch):
+    _patch_owner(monkeypatch, is_owner=False)
+
+    def _from_db(_eco: str) -> ProxyHealthResponse:
+        raise LookupError("No cached proxy health data for ecosystem: pypi")
+
+    monkeypatch.setattr(
+        "app.routers.proxy_health.get_proxy_health_from_db", _from_db
+    )
+    c = _authed_client(login="member")
+    response = c.get("/api/proxy-health/pypi")
+    assert response.status_code == 404
+
+
+def test_proxy_health_member_cannot_put_override(monkeypatch):
+    _patch_owner(monkeypatch, is_owner=False)
+    c = _authed_client(login="member")
+    response = c.put(
+        "/api/proxy-health/pypi/overrides",
+        json={
+            "problem_code": "CVE-1",
+            "artifact": "foo",
+            "fixed_version": "1.2.3",
+            "remark": "x",
+        },
+    )
+    assert response.status_code == 403
+
+
+def test_proxy_health_member_cannot_delete_override(monkeypatch):
+    _patch_owner(monkeypatch, is_owner=False)
+    c = _authed_client(login="member")
+    response = c.request(
+        "DELETE",
+        "/api/proxy-health/pypi/overrides",
+        json={"problem_code": "CVE-1", "artifact": "foo"},
+    )
+    assert response.status_code == 403
+
+
+def test_proxy_health_snapshot_from_db(monkeypatch):
+    def _fake(eco: str) -> ProxyHealthResponse:
+        assert eco == "pypi"
+        return ProxyHealthResponse(
+            ecosystem=eco,
+            repository="pypi-proxy-health",
+            generated_at="2026-01-01T00:00:00+00:00",
+            vulnerabilities=[],
+            licenses=[],
+            vulnerability_overrides=[],
+        )
+
+    monkeypatch.setattr(
+        "app.routers.proxy_health.get_proxy_health_from_db", _fake
+    )
+    c = _authed_client()
+    response = c.get("/api/proxy-health/pypi/snapshot")
+    assert response.status_code == 200
+    assert response.json()["repository"] == "pypi-proxy-health"
+
+
+def test_proxy_health_snapshot_not_found(monkeypatch):
+    def _fake(_eco: str) -> ProxyHealthResponse:
+        raise LookupError("No cached proxy health data for ecosystem: pypi")
+
+    monkeypatch.setattr(
+        "app.routers.proxy_health.get_proxy_health_from_db", _fake
+    )
+    c = _authed_client()
+    response = c.get("/api/proxy-health/pypi/snapshot")
+    assert response.status_code == 404
+
+
 def test_proxy_health_maps_nexus_401_to_502(monkeypatch):
-    async def _fake(_eco: str) -> ProxyHealthResponse:
+    _patch_owner(monkeypatch, is_owner=True)
+
+    async def _fake(_eco: str, **_kwargs) -> ProxyHealthResponse:
         request = httpx.Request("GET", "https://nexus.example/health")
         response = httpx.Response(401, text="Unauthorized", request=request)
         raise httpx.HTTPStatusError("401", request=request, response=response)
@@ -500,7 +645,9 @@ def test_proxy_health_maps_nexus_401_to_502(monkeypatch):
 
 
 def test_proxy_health_maps_nexus_403_to_502(monkeypatch):
-    async def _fake(_eco: str) -> ProxyHealthResponse:
+    _patch_owner(monkeypatch, is_owner=True)
+
+    async def _fake(_eco: str, **_kwargs) -> ProxyHealthResponse:
         request = httpx.Request("GET", "https://nexus.example/health")
         response = httpx.Response(403, text="Forbidden", request=request)
         raise httpx.HTTPStatusError("403", request=request, response=response)

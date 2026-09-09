@@ -117,6 +117,7 @@ CREATE TABLE IF NOT EXISTS proxy_health_vulnerability (
     artifact TEXT NOT NULL,
     version TEXT NOT NULL,
     imported_at TEXT,
+    published_at TEXT,
     fixed_version TEXT,
     in_hosted INTEGER NOT NULL DEFAULT 0
 );
@@ -206,6 +207,12 @@ def init_schema(conn: sqlite3.Connection | None = None) -> None:
         "proxy_health_vulnerability",
         "in_hosted",
         "in_hosted INTEGER NOT NULL DEFAULT 0",
+    )
+    _ensure_column(
+        conn,
+        "proxy_health_vulnerability",
+        "published_at",
+        "published_at TEXT",
     )
     _ensure_column(
         conn,

@@ -1,10 +1,10 @@
 from typing import Annotated
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from app.db import connect
-from app.deps import require_user
+from app.deps import require_cicd_owner, require_user
 from app.nexus_http import nexus_http_exception
 from app.schemas import (
     ProxyHealthResponse,
@@ -12,11 +12,13 @@ from app.schemas import (
     ProxyHealthVulnOverrideKey,
     ProxyHealthVulnOverrideUpdate,
 )
+from app.services import github
 from app.services.nexus_health import ProxyHealthUnavailable
 from app.services.osv import is_package_fixed_version
 from app.services.proxy_health_store import (
     delete_vuln_override,
     get_proxy_health_cached,
+    get_proxy_health_from_db,
     save_vuln_override,
 )
 from app.services.session import SessionUser
@@ -24,6 +26,7 @@ from app.services.session import SessionUser
 router = APIRouter(prefix="/proxy-health", tags=["proxy-health"])
 
 CurrentUser = Annotated[SessionUser, Depends(require_user)]
+OwnerUser = Annotated[SessionUser, Depends(require_cicd_owner)]
 SUPPORTED = frozenset({"pypi", "npm", "nuget"})
 EcoPath = Annotated[str, Path(description="Package ecosystem: pypi | npm | nuget")]
 
@@ -53,11 +56,29 @@ def _validate_fixed_version(value: str | None) -> str | None:
     return text
 
 
-@router.get("/{eco}", response_model=ProxyHealthResponse)
-async def get_proxy_health(_user: CurrentUser, eco: EcoPath):
+@router.get("/{eco}/snapshot", response_model=ProxyHealthResponse)
+async def get_proxy_health_snapshot(_user: CurrentUser, eco: EcoPath):
     key = _require_eco(eco)
     try:
-        return await get_proxy_health_cached(key)
+        return get_proxy_health_from_db(key)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/{eco}", response_model=ProxyHealthResponse)
+async def get_proxy_health(
+    user: CurrentUser,
+    eco: EcoPath,
+    refresh: bool = Query(False, description="Force live Nexus/OSV refresh"),
+):
+    key = _require_eco(eco)
+    if not await github.is_org_owner(user.login):
+        try:
+            return get_proxy_health_from_db(key)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    try:
+        return await get_proxy_health_cached(key, force_refresh=refresh)
     except ProxyHealthUnavailable as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except httpx.HTTPStatusError as exc:
@@ -71,7 +92,7 @@ async def get_proxy_health(_user: CurrentUser, eco: EcoPath):
 
 @router.put("/{eco}/overrides", response_model=ProxyHealthVulnOverride)
 async def put_vuln_override(
-    _user: CurrentUser, eco: EcoPath, body: ProxyHealthVulnOverrideUpdate
+    _user: OwnerUser, eco: EcoPath, body: ProxyHealthVulnOverrideUpdate
 ):
     key = _require_eco(eco)
     problem_code = body.problem_code.strip()
@@ -95,7 +116,7 @@ async def put_vuln_override(
 
 @router.delete("/{eco}/overrides")
 async def delete_vuln_override_route(
-    _user: CurrentUser, eco: EcoPath, body: ProxyHealthVulnOverrideKey
+    _user: OwnerUser, eco: EcoPath, body: ProxyHealthVulnOverrideKey
 ):
     key = _require_eco(eco)
     problem_code = body.problem_code.strip()

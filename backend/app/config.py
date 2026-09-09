@@ -101,6 +101,12 @@ class Settings(BaseSettings):
     osv_enabled: bool = True
     # Public OSV often fails behind corp MITM — default off for local/corp use
     osv_verify_ssl: bool = False
+    # When OSV has no published date for a CVE, fall back to NVD
+    nvd_enabled: bool = True
+    nvd_base_url: str = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+    nvd_api_key: str = ""
+    # Owner live proxy-health refresh TTL (seconds); within window return DB snapshot
+    proxy_health_ttl_seconds: int = 7200
 
     @field_validator("cors_origins", mode="before")
     @classmethod
