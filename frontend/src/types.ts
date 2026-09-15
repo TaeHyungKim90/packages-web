@@ -174,6 +174,21 @@ export interface GhesOrgsResponse {
   organizations: GhesOrgItem[];
 }
 
+export interface GhesMemberItem {
+  login: string;
+  name?: string | null;
+  email?: string | null;
+  user_type: string;
+  site_admin: boolean;
+  organizations: string[];
+  organizations_label: string;
+}
+
+export interface GhesMembersResponse {
+  synced_at: string | null;
+  members: GhesMemberItem[];
+}
+
 export interface AggregatedPackageRow {
   format: "pypi" | "npm" | "nuget" | string;
   name: string;

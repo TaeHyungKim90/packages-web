@@ -3,6 +3,7 @@ import type {
   CheckParams,
   GhesOrgItem,
   GhesOrgsResponse,
+  GhesMembersResponse,
   PackageCheckResponse,
   PackageRequestResult,
   PackageRequestStatus,
@@ -227,6 +228,18 @@ export async function saveGhesOrgs(
       })),
     }),
   });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+export async function fetchGhesMembers(): Promise<GhesMembersResponse> {
+  const res = await apiFetch("/api/ghes-members");
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+export async function syncGhesMembers(): Promise<GhesMembersResponse> {
+  const res = await apiFetch("/api/ghes-members/sync", { method: "POST" });
   if (!res.ok) throw new Error(await readError(res));
   return res.json();
 }

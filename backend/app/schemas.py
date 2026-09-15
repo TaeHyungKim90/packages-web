@@ -187,6 +187,21 @@ class GhesOrgsSaveBody(BaseModel):
     organizations: list[GhesOrgSaveItem] = Field(default_factory=list)
 
 
+class GhesMemberItem(BaseModel):
+    login: str
+    name: str | None = None
+    email: str | None = None
+    user_type: str = "User"
+    site_admin: bool = False
+    organizations: list[str] = Field(default_factory=list)
+    organizations_label: str = ""
+
+
+class GhesMembersResponse(BaseModel):
+    synced_at: str | None = None
+    members: list[GhesMemberItem] = Field(default_factory=list)
+
+
 class AggregatedPackageRow(BaseModel):
     format: str
     name: str

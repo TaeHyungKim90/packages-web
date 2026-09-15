@@ -5,6 +5,7 @@ from app.db import init_schema, migrate_yaml_if_needed
 from app.routers import (
     auth,
     ghes_inventory,
+    ghes_members,
     package_request,
     packages,
     project_packages,
@@ -36,6 +37,7 @@ app.include_router(packages.router, prefix="/api")
 app.include_router(package_request.router, prefix="/api")
 app.include_router(proxy_health.router, prefix="/api")
 app.include_router(ghes_inventory.router, prefix="/api")
+app.include_router(ghes_members.router, prefix="/api")
 app.include_router(project_packages.router, prefix="/api")
 
 

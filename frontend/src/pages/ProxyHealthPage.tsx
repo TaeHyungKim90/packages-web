@@ -234,9 +234,7 @@ export default function ProxyHealthPage({ packageType }: Props) {
     setSort((current) => nextHealthSort(current, key));
   };
 
-  const reportTime = formatReportTime(
-    data?.fetched_at ?? data?.generated_at ?? null,
-  );
+  const reportTime = formatReportTime(data?.generated_at ?? null);
   const showGroup = Boolean(
     data?.vulnerabilities.some((r) => r.group) ||
       data?.licenses.some((r) => r.group),
@@ -381,7 +379,7 @@ export default function ProxyHealthPage({ packageType }: Props) {
             {reportTime && (
               <>
                 {" "}
-                · 갱신 시각 <strong>{reportTime}</strong>
+                · 보고서 갱신 <strong>{reportTime}</strong>
               </>
             )}
             {" · "}

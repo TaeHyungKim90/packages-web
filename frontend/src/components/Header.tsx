@@ -21,7 +21,9 @@ export default function Header({
   const requestActive = pathname.startsWith("/request");
   const vulnActive = pathname.startsWith("/vuln");
   const adminActive =
-    pathname.startsWith("/orgs") || pathname.startsWith("/project-packages");
+    pathname.startsWith("/orgs") ||
+    pathname.startsWith("/project-packages") ||
+    pathname.startsWith("/ghes-members");
   const [openMenu, setOpenMenu] = useState<MenuId | null>(null);
 
   useEffect(() => {
@@ -115,6 +117,17 @@ export default function Header({
                 onClick={() => setOpenMenu(null)}
               >
                 GHES 조직
+              </NavLink>
+            </li>
+            <li>
+              <NavLink
+                to="/ghes-members"
+                className={({ isActive }) =>
+                  `header-nav__sublink${isActive ? " header-nav__sublink--active" : ""}`
+                }
+                onClick={() => setOpenMenu(null)}
+              >
+                GHES 가입자
               </NavLink>
             </li>
             <li>

@@ -35,6 +35,26 @@ CREATE TABLE IF NOT EXISTS ghes_inventory_meta (
     synced_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS ghes_member_meta (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    synced_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS ghes_member (
+    login TEXT PRIMARY KEY,
+    user_id INTEGER,
+    name TEXT,
+    email TEXT,
+    user_type TEXT NOT NULL DEFAULT 'User',
+    site_admin INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS ghes_member_org (
+    login TEXT NOT NULL REFERENCES ghes_member(login) ON DELETE CASCADE,
+    org_name TEXT NOT NULL,
+    PRIMARY KEY (login, org_name)
+);
+
 CREATE TABLE IF NOT EXISTS package_snapshot_meta (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     collected_at TEXT
