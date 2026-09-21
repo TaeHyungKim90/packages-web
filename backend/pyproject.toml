@@ -21,7 +21,7 @@ dev = [
 ]
 
 [tool.uv]
-index-url = "https://nexus.sk-inc.com:8081/repository/pypi-proxy/simple"
+index-url = "http://10.237.165.56:8081/repository/pypi-proxy/simple"
 default-groups = ["dev"]
 
 [tool.ruff]
