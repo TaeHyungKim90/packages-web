@@ -108,6 +108,8 @@ class ProxyHealthVulnerability(BaseModel):
     published_at: str | None = None
     fixed_version: str | None = None
     in_hosted: bool = False
+    # 정상버전·오탐: 화면 리스트에는 보이고 엑셀에서는 제외
+    resolved: bool = False
 
 
 class ProxyHealthLicense(BaseModel):

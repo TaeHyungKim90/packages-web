@@ -298,7 +298,21 @@ export default function ProxyHealthPage({ packageType }: Props) {
 
     let records: Array<Record<string, unknown>>;
     if (view === "vulnerabilities") {
-      records = sortedVulnRows.map((row) => {
+      // 정상버전·오탐(resolved)은 화면 리스트에만 두고 엑셀에서는 제외
+      const exportVulns = importFilteredVulns.filter((v) => !v.resolved);
+      const exportRows = sortAggregatedVulnerabilities(
+        filterVulnerabilitiesByBand(
+          aggregateVulnerabilities(
+            query.trim()
+              ? filterVulnerabilities(exportVulns, query)
+              : exportVulns,
+            data?.vulnerability_overrides,
+          ),
+          threatBand,
+        ),
+        sort,
+      );
+      records = exportRows.map((row) => {
         const out: Record<string, unknown> = {
           위험도: row.threat_level ?? "",
           "문제 코드": row.problem_code,

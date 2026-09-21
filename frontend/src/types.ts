@@ -117,6 +117,8 @@ export interface ProxyHealthVulnerability {
   published_at?: string | null;
   fixed_version?: string | null;
   in_hosted?: boolean;
+  /** 정상버전·오탐 — 리스트 표시, 엑셀 제외 */
+  resolved?: boolean;
 }
 
 export interface ProxyHealthLicense {

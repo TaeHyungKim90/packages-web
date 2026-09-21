@@ -49,6 +49,28 @@ def cache_is_fresh(fetched_at: str | None, ttl_seconds: int | None = None) -> bo
     return age < ttl
 
 
+def report_is_fresh(generated_at: str | None, ttl_seconds: int | None = None) -> bool:
+    """Nexus 보고서 분석시각(generated_at)이 아직 유효한지."""
+    ttl = (
+        settings.proxy_health_report_ttl_seconds
+        if ttl_seconds is None
+        else ttl_seconds
+    )
+    return cache_is_fresh(generated_at, ttl)
+
+
+def _should_use_cache(
+    cached: ProxyHealthResponse, *, force_refresh: bool
+) -> bool:
+    if force_refresh:
+        return False
+    # 보고서가 24h 이내면 Nexus 재조회 불필요
+    if report_is_fresh(cached.generated_at):
+        return True
+    # 보고서는 오래됐어도 최근 live(fetched_at TTL)면 스냅샷 유지
+    return cache_is_fresh(cached.fetched_at)
+
+
 def _load_report(conn: sqlite3.Connection, ecosystem: str) -> ProxyHealthResponse | None:
     meta = conn.execute(
         "SELECT repository, generated_at, fetched_at FROM proxy_health_meta "
@@ -344,19 +366,19 @@ def _finalize_report(
 ) -> ProxyHealthResponse:
     override_map = vuln_override_map(overrides)
     applied = apply_vuln_overrides(report.vulnerabilities, override_map)
-    vulns = [
-        item
-        for item in applied
-        if not is_resolved_or_false_positive(
+    vulns: list[ProxyHealthVulnerability] = []
+    for item in applied:
+        remark = (
+            override_map[(item.problem_code, item.artifact)].remark
+            if (item.problem_code, item.artifact) in override_map
+            else None
+        )
+        resolved = is_resolved_or_false_positive(
             item.version,
             item.fixed_version,
-            remark=(
-                override_map[(item.problem_code, item.artifact)].remark
-                if (item.problem_code, item.artifact) in override_map
-                else None
-            ),
+            remark=remark,
         )
-    ]
+        vulns.append(item.model_copy(update={"resolved": resolved}))
     return report.model_copy(
         update={
             "vulnerabilities": vulns,
@@ -382,7 +404,7 @@ def get_proxy_health_from_db(ecosystem: str) -> ProxyHealthResponse:
 async def get_proxy_health_cached(
     ecosystem: str, *, force_refresh: bool = False
 ) -> ProxyHealthResponse:
-    """TTL 안이면 DB 스냅샷, 만료/force 시 Nexus + OSV 후 저장."""
+    """보고서 24h·fetched_at TTL 안이면 DB, 만료/force 시 Nexus + OSV 후 저장."""
     key = ecosystem.lower().strip()
     cached: ProxyHealthResponse | None = None
     fixed_index: dict[tuple[str, str, str], str] = {}
@@ -395,11 +417,7 @@ async def get_proxy_health_cached(
     finally:
         conn.close()
 
-    if (
-        cached is not None
-        and not force_refresh
-        and cache_is_fresh(cached.fetched_at)
-    ):
+    if cached is not None and _should_use_cache(cached, force_refresh=force_refresh):
         return _finalize_report(cached, overrides)
 
     override_map = vuln_override_map(overrides)

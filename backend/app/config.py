@@ -107,6 +107,8 @@ class Settings(BaseSettings):
     nvd_api_key: str = ""
     # Owner live proxy-health refresh TTL (seconds); within window return DB snapshot
     proxy_health_ttl_seconds: int = 7200
+    # Nexus RHC 분석시각(generated_at) 기준: 이 안이면 DB, 초과 시에만 live 재조회
+    proxy_health_report_ttl_seconds: int = 86400
 
     @field_validator("cors_origins", mode="before")
     @classmethod

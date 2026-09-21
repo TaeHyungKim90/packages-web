@@ -269,6 +269,7 @@ async def test_upstream_version_exists_nuget_gallery_404(monkeypatch):
 @pytest.mark.asyncio
 async def test_upstream_version_exists_nuget_ssl_retries_verify_false(monkeypatch):
     calls: list[bool | None] = []
+    monkeypatch.setattr("app.services.nexus.settings.nexus_verify_ssl", True)
 
     class _Resp:
         status_code = 200

@@ -204,6 +204,53 @@ def test_apply_vuln_overrides_sets_fixed_version():
     assert out[0].fixed_version == "2.0.0"
 
 
+def test_finalize_keeps_resolved_items_with_flag():
+    from app.schemas import ProxyHealthVulnOverride
+    from app.services.proxy_health_store import _finalize_report
+
+    report = ProxyHealthResponse(
+        ecosystem="npm",
+        repository="npm-proxy-health",
+        vulnerabilities=[
+            ProxyHealthVulnerability(
+                threat_level=5,
+                problem_code="CVE-OPEN",
+                artifact="left",
+                version="1.0.0",
+                fixed_version="2.0.0",
+            ),
+            ProxyHealthVulnerability(
+                threat_level=5,
+                problem_code="CVE-FIXED",
+                artifact="done",
+                version="2.0.0",
+                fixed_version="2.0.0",
+            ),
+            ProxyHealthVulnerability(
+                threat_level=5,
+                problem_code="CVE-FP",
+                artifact="noise",
+                version="1.0.0",
+            ),
+        ],
+    )
+    overrides = [
+        ProxyHealthVulnOverride(
+            problem_code="CVE-FP",
+            artifact="noise",
+            fixed_version="정상버전(오탐)",
+            remark="오탐",
+            updated_at="2026-01-01T00:00:00+00:00",
+        )
+    ]
+    out = _finalize_report(report, overrides)
+    by_code = {v.problem_code: v for v in out.vulnerabilities}
+    assert set(by_code) == {"CVE-OPEN", "CVE-FIXED", "CVE-FP"}
+    assert by_code["CVE-OPEN"].resolved is False
+    assert by_code["CVE-FIXED"].resolved is True
+    assert by_code["CVE-FP"].resolved is True
+
+
 @pytest.mark.asyncio
 async def test_get_proxy_health_applies_override_and_skips_osv(monkeypatch):
     conn = connect()
@@ -455,3 +502,50 @@ async def test_get_proxy_health_expired_ttl_refetches(monkeypatch):
     )
     result = await get_proxy_health_cached("pypi")
     assert result.repository == "refetched"
+
+
+@pytest.mark.asyncio
+async def test_get_proxy_health_fresh_report_skips_live_even_if_ttl_expired(
+    monkeypatch,
+):
+    """보고서(generated_at)가 24h 이내면 fetched_at TTL이 지나도 Nexus를 치지 않는다."""
+    from datetime import timedelta
+
+    monkeypatch.setattr(
+        "app.services.proxy_health_store.settings.proxy_health_ttl_seconds",
+        60,
+    )
+    monkeypatch.setattr(
+        "app.services.proxy_health_store.settings.proxy_health_report_ttl_seconds",
+        86400,
+    )
+    conn = connect()
+    init_schema(conn)
+    fresh_report = (datetime.now(tz=UTC) - timedelta(hours=3)).isoformat()
+    save_proxy_health_to_conn(
+        conn,
+        ProxyHealthResponse(
+            ecosystem="pypi",
+            repository="report-fresh",
+            generated_at=fresh_report,
+            vulnerabilities=[],
+            licenses=[],
+        ),
+    )
+    stale_fetch = (datetime.now(tz=UTC) - timedelta(hours=5)).isoformat()
+    conn.execute(
+        "UPDATE proxy_health_meta SET fetched_at = ? WHERE ecosystem = ?",
+        (stale_fetch, "pypi"),
+    )
+    conn.commit()
+    conn.close()
+
+    async def _fetch(_eco: str):
+        raise AssertionError("should not fetch while Nexus report is fresh")
+
+    monkeypatch.setattr(
+        "app.services.proxy_health_store.fetch_proxy_health",
+        _fetch,
+    )
+    result = await get_proxy_health_cached("pypi")
+    assert result.repository == "report-fresh"
