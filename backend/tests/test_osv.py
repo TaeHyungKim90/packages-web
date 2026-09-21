@@ -1,6 +1,10 @@
 import pytest
 from app.schemas import ProxyHealthVulnerability
-from app.services.osv import enrich_fixed_versions, match_fixed_for_row
+from app.services.osv import (
+    enrich_fixed_versions,
+    is_resolved_or_false_positive,
+    match_fixed_for_row,
+)
 
 SAMPLE_VULN = {
     "id": "GHSA-xxxx",
@@ -191,6 +195,47 @@ def test_match_uses_extracted_events_fixed_when_repo_matches():
         problem_code="CVE-TEST",
     )
     assert fixed == "1.2.3"
+
+
+def test_match_prefers_details_fixed_over_wrong_extracted_events():
+    """CVE conversion sometimes extracts last_affected as fixed (multer 2.4.0 case)."""
+    cve = {
+        "id": "CVE-2026-88932",
+        "aliases": ["CVE-2026-88932"],
+        "details": (
+            "In versions 2.2.0 through 2.3.0 ... "
+            "The issue is fixed in multer 2.4.0, and users should upgrade to 2.4.0 or later."
+        ),
+        "affected": [
+            {
+                "ranges": [
+                    {
+                        "type": "GIT",
+                        "repo": "https://github.com/expressjs/multer",
+                        "events": [
+                            {"introduced": "abc"},
+                            {"fixed": "def"},
+                        ],
+                        "database_specific": {
+                            "extracted_events": [
+                                {"introduced": "2.2.0"},
+                                {"fixed": "2.3.0"},
+                            ]
+                        },
+                    }
+                ]
+            }
+        ],
+    }
+    fixed = match_fixed_for_row(
+        [cve],
+        ecosystem="npm",
+        artifact="multer",
+        version="2.3.0",
+        problem_code="CVE-2026-88932",
+    )
+    assert fixed == "2.4.0"
+    assert is_resolved_or_false_positive("2.3.0", fixed) is False
 
 
 def test_match_uses_extracted_events_fixed_for_slim_variant_repo():

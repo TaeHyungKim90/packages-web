@@ -30,6 +30,13 @@ _FALSE_POSITIVE = re.compile(
     r"(오탐|해당\s*없|해당없음|false\s*positive|\bn/?a\b)",
     re.IGNORECASE,
 )
+# e.g. "fixed in multer 2.4.0", "upgrade to 2.4.0 or later"
+_FIXED_IN_TEXT = re.compile(
+    r"(?:fixed\s+in|upgrade\s+to)\s+"
+    r"(?:(?P<pkg>[@\w./-]+)\s+)?"
+    r"v?(?P<ver>\d+(?:\.\d+){0,3})\b",
+    re.IGNORECASE,
+)
 
 
 def is_package_fixed_version(value: str | None) -> bool:
@@ -278,6 +285,30 @@ def _extracted_semver_events(
     return fixed_values, last_affected
 
 
+def _fixed_from_details_text(
+    vuln: dict[str, Any], *, package_name: str
+) -> list[str]:
+    """Parse advisory text when OSV extracted_events is wrong/incomplete."""
+    name_key = package_name.lower().strip()
+    blobs = [
+        str(vuln.get("summary") or ""),
+        str(vuln.get("details") or ""),
+    ]
+    found: list[str] = []
+    for blob in blobs:
+        for match in _FIXED_IN_TEXT.finditer(blob):
+            pkg = (match.group("pkg") or "").strip().lower()
+            ver = (match.group("ver") or "").strip()
+            if not ver or not is_package_fixed_version(ver):
+                continue
+            if pkg:
+                pkg_norm = pkg.rstrip(".,;:").lower()
+                if name_key and pkg_norm != name_key:
+                    continue
+            found.append(ver)
+    return found
+
+
 def _fixed_from_vuln(
     vuln: dict[str, Any],
     *,
@@ -294,7 +325,10 @@ def _fixed_from_vuln(
     extracted_fixed, _last = _extracted_semver_events(
         vuln, ecosystem=ecosystem, package_name=package_name
     )
-    return _pick_fixed(current_version, extracted_fixed)
+    details_fixed = _fixed_from_details_text(vuln, package_name=package_name)
+    # Prefer advisory text when CVE conversion extracted_events is stale/wrong
+    # (e.g. multer CVE-2026-88932: extracted 2.3.0 vs details 2.4.0).
+    return _pick_fixed(current_version, [*extracted_fixed, *details_fixed])
 
 
 def _last_affected_from_vulns(
