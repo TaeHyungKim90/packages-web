@@ -3,6 +3,7 @@ import { fetchGhesOrgs, fetchProjectPackages, syncProjectPackages } from "../api
 import Pagination from "../components/Pagination";
 import type { AggregatedPackageRow } from "../types";
 import {
+  cmpImportedAt,
   DEFAULT_HEALTH_SORT,
   formatImportedAt,
   formatReportTime,
@@ -56,6 +57,11 @@ function sortRows(rows: AggregatedPackageRow[], sort: HealthSort): AggregatedPac
     if (sort.key === "name") {
       const cmp = a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
       return sort.dir === "asc" ? cmp : -cmp;
+    }
+    if (sort.key === "importedAt") {
+      const cmp = cmpImportedAt(a.imported_at, b.imported_at, sort.dir);
+      if (cmp !== 0) return cmp;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
     }
     const left = a.max_threat_level;
     const right = b.max_threat_level;
@@ -260,7 +266,15 @@ export default function ProjectPackagesPage() {
                   }}
                 />
                 <th>버전</th>
-                <th>반입날짜</th>
+                <SortHeader
+                  label="반입날짜"
+                  column="importedAt"
+                  sort={sort}
+                  onSort={(key) => {
+                    setSort((current) => nextHealthSort(current, key));
+                    setPage(1);
+                  }}
+                />
                 <SortHeader
                   label="CVE 점수"
                   column="threat"

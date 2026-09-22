@@ -341,7 +341,7 @@ function cmpName(a: string, b: string): number {
   return a.localeCompare(b, undefined, { sensitivity: "base" });
 }
 
-function cmpImportedAt(
+export function cmpImportedAt(
   a: string | null | undefined,
   b: string | null | undefined,
   dir: HealthSortDir,
