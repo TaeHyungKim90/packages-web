@@ -108,8 +108,9 @@ def test_ghes_members_api():
 
 
 @pytest.mark.asyncio
-async def test_list_users_continues_after_short_page():
+async def test_list_users_continues_after_short_page(monkeypatch):
     """GHES may return < per_page while more users exist after last id."""
+    monkeypatch.setattr(settings, "github_token", "dummy-token")
     calls: list[int] = []
 
     class FakeResponse:
