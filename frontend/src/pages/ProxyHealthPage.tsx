@@ -297,6 +297,7 @@ export default function ProxyHealthPage({ packageType }: Props) {
     const sheetName = view === "vulnerabilities" ? "취약점" : "라이선스";
 
     let records: Array<Record<string, unknown>>;
+    let problemUrls: string[] = [];
     if (view === "vulnerabilities") {
       // 정상버전·오탐(resolved)은 화면 리스트에만 두고 엑셀에서는 제외
       const exportVulns = importFilteredVulns.filter((v) => !v.resolved);
@@ -312,6 +313,7 @@ export default function ProxyHealthPage({ packageType }: Props) {
         ),
         sort,
       );
+      problemUrls = exportRows.map((row) => row.problem_url);
       records = exportRows.map((row) => {
         const out: Record<string, unknown> = {
           위험도: row.threat_level ?? "",
@@ -341,13 +343,11 @@ export default function ProxyHealthPage({ packageType }: Props) {
     }
 
     const ws = XLSX.utils.json_to_sheet(records, { skipHeader: false });
-    if (view === "vulnerabilities") {
-      sortedVulnRows.forEach((row, i) => {
-        if (!row.problem_url) return;
-        const cell = ws[`B${i + 2}`];
-        if (cell) cell.l = { Target: row.problem_url };
-      });
-    }
+    problemUrls.forEach((url, i) => {
+      if (!url) return;
+      const cell = ws[`B${i + 2}`];
+      if (cell) cell.l = { Target: url };
+    });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
 
