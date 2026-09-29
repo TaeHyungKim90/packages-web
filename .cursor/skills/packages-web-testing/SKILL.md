@@ -20,6 +20,8 @@ origin: packages-web
 
 CI(`.github/workflows/ci.yml`)는 self-hosted 러너 + `cloud-ops-builder` 컨테이너에서 `uv sync --frozen`, `npm ci` 후 `make lint` → `make type-check` → `make test`를 돌린다. 로컬에서 같은 순서로 통과시킨 뒤 커밋한다.
 
+**SBOM job은 가이드 작성 전 테스트용이다.** 정식 배포 때는 CD 쪽 이미지 빌드 뒤로 옮길 예정이다. 테스트가 끝나면 `sbom` job이 재사용 워크플로 `.github/workflows/sbom.yml`을 `backend`, `frontend`에 대해 호출한다. 운영 의존성만 CycloneDX JSON으로 만든다(`uv export --format cyclonedx1.5 --no-dev`, `npm sbom --package-lock-only --omit dev`). 결과는 `SBOM-<이름>-<태그 또는 pr-번호>` 아티팩트로 90일간 보관한다.
+
 ## 1. 백엔드 원칙
 
 - **외부 네트워크(Nexus, GHES, OSV, NVD, PyPI/npm/NuGet)를 실제로 호출하지 않는다.** `monkeypatch.setattr("app.services.<module>.<func>", fake)`로 바꾼다. 비동기 함수는 `async def` 가짜로 바꾼다.

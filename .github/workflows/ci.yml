@@ -77,3 +77,19 @@ jobs:
 
       - name: Run tests
         run: make test
+
+  sbom:
+    name: SBOM (${{ matrix.target.name }})
+    needs: tester
+    strategy:
+      matrix:
+        target:
+          - path: backend
+            name: packages-web-backend
+          - path: frontend
+            name: packages-web-frontend
+    uses: ./.github/workflows/sbom.yml
+    with:
+      PROJECT_PATH: ${{ matrix.target.path }}
+      PROJECT_NAME: ${{ matrix.target.name }}
+      IMAGE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || format('pr-{0}', github.event.pull_request.number) }}

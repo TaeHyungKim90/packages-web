@@ -1,0 +1,105 @@
+name: Generate Project SBOM
+
+on:
+  workflow_call:
+    inputs:
+      PROJECT_PATH:
+        required: true
+        type: string
+
+      PROJECT_NAME:
+        required: true
+        type: string
+
+      IMAGE_TAG:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  generate-sbom:
+    name: Generate SBOM
+    runs-on: [self-hosted]
+    container: nexus.sk-inc.com:8081/cr/cloud-ops-builder:v1.0.4
+
+    defaults:
+      run:
+        working-directory: ${{ inputs.PROJECT_PATH }}
+
+    env:
+      PROJECT_NAME: ${{ inputs.PROJECT_NAME }}
+      IMAGE_TAG: ${{ inputs.IMAGE_TAG }}
+      SBOM_PREFIX: ${{ inputs.PROJECT_NAME }}-${{ inputs.IMAGE_TAG }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Prepare SBOM directory
+        run: |
+          rm -rf sbom
+          mkdir -p sbom
+
+      # ------------------------------------------------------
+      # PyPI
+      # uv.lock이 있는 경우 (운영 의존성만)
+      # ------------------------------------------------------
+
+      - name: Generate PyPI SBOM
+        if: hashFiles(format('{0}/uv.lock', inputs.PROJECT_PATH)) != ''
+        run: |
+          uv export \
+            --frozen \
+            --no-dev \
+            --preview-features sbom-export \
+            --format cyclonedx1.5 \
+            --output-file "sbom/${SBOM_PREFIX}-pypi-sbom.json"
+
+      # ------------------------------------------------------
+      # npm
+      # package-lock.json이 있는 경우 (운영 의존성만)
+      # ------------------------------------------------------
+
+      - name: Generate npm SBOM
+        if: hashFiles(format('{0}/package-lock.json', inputs.PROJECT_PATH)) != ''
+        run: |
+          npm sbom \
+            --package-lock-only \
+            --omit dev \
+            --sbom-format cyclonedx \
+            --sbom-type application \
+            > "sbom/${SBOM_PREFIX}-npm-sbom.json"
+
+      # ------------------------------------------------------
+      # 생성정보
+      # ------------------------------------------------------
+
+      - name: Create manifest
+        run: |
+          cat > sbom/manifest.txt <<EOF
+          Project     : ${PROJECT_NAME}
+          Image Tag   : ${IMAGE_TAG}
+          Repository  : ${GITHUB_REPOSITORY}
+          Branch/Tag  : ${GITHUB_REF_NAME}
+          Commit      : ${GITHUB_SHA}
+          Run ID      : ${GITHUB_RUN_ID}
+          Generated   : $(date -u '+%Y-%m-%dT%H:%M:%SZ')
+          EOF
+
+      - name: Show generated SBOM
+        run: |
+          echo "===== SBOM Files ====="
+          ls -lh sbom/
+
+      # ------------------------------------------------------
+      # 사용자가 GitHub Actions 화면에서 다운로드
+      # ------------------------------------------------------
+
+      - name: Upload SBOM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SBOM-${{ inputs.PROJECT_NAME }}-${{ inputs.IMAGE_TAG }}
+          path: ${{ inputs.PROJECT_PATH }}/sbom/
+          retention-days: 90
