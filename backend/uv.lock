@@ -102,6 +102,18 @@ wheels = [
 ]
 
 [[package]]
+name = "httpcore2"
+version = "2.12.0"
+source = { registry = "http://10.237.165.56:8081/repository/pypi-proxy/simple" }
+dependencies = [
+    { name = "h11" },
+    { name = "truststore" },
+]
+wheels = [
+    { url = "http://10.237.165.56:8081/repository/pypi-proxy/packages/httpcore2/2.12.0/httpcore2-2.12.0-py3-none-any.whl", hash = "sha256:7e04258ce01013d7d615e5b910a3b27fac937d7a95038227e79652b4ba3b4ceb", size = 83074, upload-time = "2026-08-31T00:59:38.84Z" },
+]
+
+[[package]]
 name = "httptools"
 version = "0.8.0"
 source = { registry = "http://10.237.165.56:8081/repository/pypi-proxy/simple" }
@@ -153,6 +165,30 @@ wheels = [
 ]
 
 [[package]]
+name = "httpx2"
+version = "2.12.0"
+source = { registry = "http://10.237.165.56:8081/repository/pypi-proxy/simple" }
+dependencies = [
+    { name = "anyio", marker = "sys_platform != 'emscripten'" },
+    { name = "httpcore2", marker = "sys_platform != 'emscripten'" },
+    { name = "httpx2-jsfetch", marker = "sys_platform == 'emscripten'" },
+    { name = "idna" },
+    { name = "truststore", marker = "sys_platform != 'emscripten'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+]
+wheels = [
+    { url = "http://10.237.165.56:8081/repository/pypi-proxy/packages/httpx2/2.12.0/httpx2-2.12.0-py3-none-any.whl", hash = "sha256:cc8b6eecb8661c146b8f89a60e97456ee086e91a784ed31ac450c3a9e613dd36", size = 95427, upload-time = "2026-08-31T00:59:39.396Z" },
+]
+
+[[package]]
+name = "httpx2-jsfetch"
+version = "1.0"
+source = { registry = "http://10.237.165.56:8081/repository/pypi-proxy/simple" }
+wheels = [
+    { url = "http://10.237.165.56:8081/repository/pypi-proxy/packages/httpx2-jsfetch/1.0/httpx2_jsfetch-1.0-py3-none-any.whl", hash = "sha256:cb916b707601e69a07721aabc8f3f6659be3a6893bc1ff5c6f9e02241df2da32", size = 6382, upload-time = "2026-09-04T05:39:07.847Z" },
+]
+
+[[package]]
 name = "idna"
 version = "3.18"
 source = { registry = "http://10.237.165.56:8081/repository/pypi-proxy/simple" }
@@ -196,6 +232,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "httpx2" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
@@ -215,6 +252,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "httpx2", specifier = ">=2.12.0" },
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", specifier = ">=0.24.0" },
     { name = "ruff", specifier = ">=0.8.0" },
@@ -471,6 +509,14 @@ dependencies = [
 sdist = { url = "http://10.237.165.56:8081/repository/pypi-proxy/packages/starlette/1.3.1/starlette-1.3.1.tar.gz", hash = "sha256:05d0213193f2fbaae60e2ecb593b4add4262ad4e46536b54abe36f11a71724e0", size = 2703240, upload-time = "2026-06-12T09:23:11.602Z" }
 wheels = [
     { url = "http://10.237.165.56:8081/repository/pypi-proxy/packages/starlette/1.3.1/starlette-1.3.1-py3-none-any.whl", hash = "sha256:c7372aae11c3c3f26a42df7bd626cec2f47d03483d261d369516a615a53714c6", size = 73632, upload-time = "2026-06-12T09:23:10.017Z" },
+]
+
+[[package]]
+name = "truststore"
+version = "0.10.4"
+source = { registry = "http://10.237.165.56:8081/repository/pypi-proxy/simple" }
+wheels = [
+    { url = "http://10.237.165.56:8081/repository/pypi-proxy/packages/truststore/0.10.4/truststore-0.10.4-py3-none-any.whl", hash = "sha256:adaeaecf1cbb5f4de3b1959b42d41f6fab57b2b1666adb59e89cb0b53361d981", size = 18660, upload-time = "2026-06-05T03:01:55.209Z" },
 ]
 
 [[package]]
