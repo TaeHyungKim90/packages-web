@@ -17,7 +17,7 @@ jobs:
   linter:
     name: Lint
     runs-on: [self-hosted]
-    container: nexus.sk-inc.com:8081/cr/cloud-ops-builder:v1.0.4
+    container: nexus.sk-inc.com:8081/cr/cloud-ops-builder:v1.2.0
 
     steps:
       - name: Check out repository
@@ -51,7 +51,7 @@ jobs:
     name: Test
     needs: linter
     runs-on: [self-hosted]
-    container: nexus.sk-inc.com:8081/cr/cloud-ops-builder:v1.0.4
+    container: nexus.sk-inc.com:8081/cr/cloud-ops-builder:v1.2.0
 
     steps:
       - name: Check out repository
