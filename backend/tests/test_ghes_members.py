@@ -1,3 +1,4 @@
+import pytest
 from app.config import settings
 from app.db import connect, init_schema
 from app.deps import set_session_cookie
@@ -6,7 +7,6 @@ from app.services.session import SessionUser
 from fastapi.testclient import TestClient
 from main import app
 from starlette.responses import Response
-import pytest
 
 client = TestClient(app)
 
