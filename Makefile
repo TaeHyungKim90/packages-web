@@ -1,4 +1,4 @@
-.PHONY: help install install-backend install-frontend \
+.PHONY: help install install-backend install-frontend install-hooks \
 	backend frontend dev build preview env clean \
 	lint lint-backend lint-frontend type-check \
 	test test-backend test-frontend check
@@ -16,6 +16,7 @@ help:
 	@echo "  make install          Install backend + frontend dependencies"
 	@echo "  make install-backend  uv sync (backend)"
 	@echo "  make install-frontend npm install (frontend)"
+	@echo "  make install-hooks    Use .githooks (strip Cursor co-author trailer)"
 	@echo "  make env              Copy .env.example -> .env if missing"
 	@echo "  make backend          Run FastAPI (port $(BACKEND_PORT))"
 	@echo "  make frontend         Run Vite dev server (port 5173)"
@@ -38,7 +39,10 @@ help:
 env:
 	@if [ ! -f .env ]; then cp .env.example .env && echo "Created .env"; else echo ".env already exists"; fi
 
-install: install-backend install-frontend
+install: install-backend install-frontend install-hooks
+
+install-hooks:
+	git config core.hooksPath .githooks
 
 install-backend:
 	cd $(BACKEND_DIR) && uv sync
