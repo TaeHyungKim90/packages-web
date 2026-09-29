@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 import httpx
 
@@ -139,6 +140,46 @@ async def list_paths_named(
             paths.append(path)
     paths.sort(key=str.lower)
     return paths
+
+
+def _parse_git_date(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+async def latest_commit_at(owner: str, repo: str, path: str, *, ref: str) -> datetime | None:
+    """Time of the most recent commit on ref that touched path (None if none)."""
+    url = _api(f"/repos/{owner}/{repo}/commits")
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            url,
+            params={"path": path, "sha": ref, "per_page": "1"},
+            headers=_headers(),
+            timeout=30.0,
+        )
+        if response.status_code in (404, 409):
+            return None
+        if response.status_code >= 400:
+            raise GitHubError(
+                f"latest_commit_at failed: {response.text[:300]}",
+                status_code=response.status_code,
+            )
+        data = response.json()
+    if not isinstance(data, list) or not data or not isinstance(data[0], dict):
+        return None
+    commit = data[0].get("commit") or {}
+    for who in ("committer", "author"):
+        parsed = _parse_git_date((commit.get(who) or {}).get("date"))
+        if parsed is not None:
+            return parsed
+    return None
 
 
 async def get_ref_sha(owner: str, repo: str, ref: str) -> str:

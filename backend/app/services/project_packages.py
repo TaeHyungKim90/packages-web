@@ -143,6 +143,77 @@ async def _fetch_lock(
     return LockFile(path=path, format=fmt, sha=file.sha, packages=packages)
 
 
+def lock_group_key(lock: LockFile) -> tuple[str, str]:
+    """Same directory + same format = alternative lockfiles for one project."""
+    directory = lock.path.rsplit("/", 1)[0] if "/" in lock.path else ""
+    return directory, lock.format
+
+
+def select_latest_locks(
+    locks: list[LockFile],
+    committed_at: dict[str, datetime | None],
+) -> list[LockFile]:
+    """Keep only the most recently committed lockfile per (directory, format).
+
+    Files without a commit time lose to files with one; if no file in a group has
+    a time, the whole group is kept. Ties go to the lexicographically first path.
+    """
+    groups: dict[tuple[str, str], list[LockFile]] = {}
+    for lock in locks:
+        groups.setdefault(lock_group_key(lock), []).append(lock)
+
+    dropped: set[int] = set()
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        dated = [m for m in members if committed_at.get(m.path) is not None]
+        if not dated:
+            continue
+        winner = min(dated, key=lambda m: (-committed_at[m.path].timestamp(), m.path))
+        dropped.update(id(m) for m in members if m is not winner)
+    return [lock for lock in locks if id(lock) not in dropped]
+
+
+async def _keep_latest_locks(
+    org: str,
+    repo: str,
+    locks: list[LockFile],
+    sem: asyncio.Semaphore,
+) -> tuple[list[LockFile], list[str]]:
+    groups: dict[tuple[str, str], list[LockFile]] = {}
+    for lock in locks:
+        groups.setdefault(lock_group_key(lock), []).append(lock)
+    contested = [m for members in groups.values() if len(members) > 1 for m in members]
+    if not contested:
+        return locks, []
+
+    async def commit_time(path: str) -> datetime | None:
+        async with sem:
+            return await github.latest_commit_at(
+                org, repo, path, ref=settings.github_base_branch
+            )
+
+    results = await asyncio.gather(
+        *(commit_time(m.path) for m in contested), return_exceptions=True
+    )
+    errors: list[str] = []
+    committed_at: dict[str, datetime | None] = {}
+    for lock, result in zip(contested, results, strict=True):
+        if isinstance(result, Exception):
+            errors.append(f"{lock.path}: commit time lookup failed: {result}")
+            committed_at[lock.path] = None
+        else:
+            committed_at[lock.path] = result
+
+    for (directory, fmt), members in groups.items():
+        if len(members) > 1 and all(committed_at.get(m.path) is None for m in members):
+            paths = ", ".join(m.path for m in members)
+            errors.append(
+                f"{directory or '.'} ({fmt}): cannot determine latest lockfile, using all: {paths}"
+            )
+    return select_latest_locks(locks, committed_at), errors
+
+
 async def collect_org(
     org: ghes_inventory.StoredOrg,
     *,
@@ -187,6 +258,8 @@ async def collect_org(
                 continue
             if item is not None:
                 locks.append(item)
+        locks, lock_errors = await _keep_latest_locks(org.name, repo.name, locks, sem)
+        errors.extend(lock_errors)
         repos.append(RepoSnapshot(name=repo.name, lock_files=locks, errors=errors))
     return ProjectSnapshot(org=org.name, repos=repos)
 

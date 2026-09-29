@@ -229,6 +229,139 @@ async def test_collect_org_scans_nuget_only_on_dotnet_repos(monkeypatch):
     assert not any(lf.format == "nuget" for lf in by_repo["AIP_AGENT_BACKEND_PYTHON"].lock_files)
 
 
+def _ts(day: int):
+    from datetime import UTC, datetime
+
+    return datetime(2026, 9, day, tzinfo=UTC)
+
+
+def test_select_latest_locks_keeps_newest_in_same_dir():
+    from app.services.project_packages import select_latest_locks
+
+    old = LockFile(path="frontend/package-lock.json", format="npm")
+    new = LockFile(path="frontend/pnpm-lock.yaml", format="npm")
+    root = LockFile(path="package-lock.json", format="npm")
+    uv = LockFile(path="frontend/uv.lock", format="pypi")
+    kept = select_latest_locks(
+        [old, new, root, uv],
+        {old.path: _ts(1), new.path: _ts(20)},
+    )
+    assert [lf.path for lf in kept] == [
+        "frontend/pnpm-lock.yaml",
+        "package-lock.json",
+        "frontend/uv.lock",
+    ]
+
+
+def test_select_latest_locks_undated_loses_to_dated():
+    from app.services.project_packages import select_latest_locks
+
+    dated = LockFile(path="yarn.lock", format="npm")
+    undated = LockFile(path="package-lock.json", format="npm")
+    kept = select_latest_locks([undated, dated], {dated.path: _ts(1), undated.path: None})
+    assert [lf.path for lf in kept] == ["yarn.lock"]
+
+
+def test_select_latest_locks_keeps_all_when_no_times():
+    from app.services.project_packages import select_latest_locks
+
+    a = LockFile(path="package-lock.json", format="npm")
+    b = LockFile(path="yarn.lock", format="npm")
+    kept = select_latest_locks([a, b], {})
+    assert [lf.path for lf in kept] == ["package-lock.json", "yarn.lock"]
+
+
+def test_select_latest_locks_tie_uses_first_path():
+    from app.services.project_packages import select_latest_locks
+
+    a = LockFile(path="yarn.lock", format="npm")
+    b = LockFile(path="package-lock.json", format="npm")
+    kept = select_latest_locks([a, b], {a.path: _ts(5), b.path: _ts(5)})
+    assert [lf.path for lf in kept] == ["package-lock.json"]
+
+
+@pytest.mark.asyncio
+async def test_collect_org_uses_latest_npm_lock_per_dir(monkeypatch):
+    import asyncio
+
+    from app.services.ghes_models import StoredOrg, StoredRepo
+    from app.services.github import RepoFile
+    from app.services.project_packages import collect_org
+
+    package_lock = (
+        '{"lockfileVersion":3,"packages":{"":{},'
+        '"node_modules/left-pad":{"version":"1.0.0"}}}'
+    )
+    pnpm_lock = "lockfileVersion: '9.0'\npackages:\n  left-pad@1.3.0:\n    resolution: {}\n"
+    files = {
+        "frontend/package-lock.json": package_lock,
+        "frontend/pnpm-lock.yaml": pnpm_lock,
+        "package-lock.json": package_lock,
+    }
+    commit_days = {"frontend/package-lock.json": 1, "frontend/pnpm-lock.yaml": 20}
+    looked_up: list[str] = []
+
+    async def _get(org, repo, path, *, ref):
+        if path in files:
+            return RepoFile(path=path, content=files[path], sha=path)
+        return None
+
+    async def _commit_at(org, repo, path, *, ref):
+        looked_up.append(path)
+        return _ts(commit_days[path])
+
+    monkeypatch.setattr("app.services.project_packages.github.get_file", _get)
+    monkeypatch.setattr(
+        "app.services.project_packages.github.latest_commit_at", _commit_at
+    )
+
+    org = StoredOrg(name="AAC", managed=True, repos=[StoredRepo(name="web")])
+    snap = await collect_org(org, previous=Snapshot(), sem=asyncio.Semaphore(5))
+
+    repo = snap.repos[0]
+    assert sorted(lf.path for lf in repo.lock_files) == [
+        "frontend/pnpm-lock.yaml",
+        "package-lock.json",
+    ]
+    pnpm = next(lf for lf in repo.lock_files if lf.path == "frontend/pnpm-lock.yaml")
+    assert [(p.name, p.version) for p in pnpm.packages] == [("left-pad", "1.3.0")]
+    assert sorted(looked_up) == ["frontend/package-lock.json", "frontend/pnpm-lock.yaml"]
+    assert repo.errors == []
+
+
+@pytest.mark.asyncio
+async def test_collect_org_keeps_all_locks_when_commit_lookup_fails(monkeypatch):
+    import asyncio
+
+    from app.services.ghes_models import StoredOrg, StoredRepo
+    from app.services.github import GitHubError, RepoFile
+    from app.services.project_packages import collect_org
+
+    package_lock = '{"lockfileVersion":3,"packages":{"node_modules/a":{"version":"1.0.0"}}}'
+    yarn_lock = 'a@^1.0.0:\n  version "1.1.0"\n'
+    files = {"package-lock.json": package_lock, "yarn.lock": yarn_lock}
+
+    async def _get(org, repo, path, *, ref):
+        if path in files:
+            return RepoFile(path=path, content=files[path], sha=path)
+        return None
+
+    async def _commit_at(org, repo, path, *, ref):
+        raise GitHubError("boom", status_code=502)
+
+    monkeypatch.setattr("app.services.project_packages.github.get_file", _get)
+    monkeypatch.setattr(
+        "app.services.project_packages.github.latest_commit_at", _commit_at
+    )
+
+    org = StoredOrg(name="AAC", managed=True, repos=[StoredRepo(name="web")])
+    snap = await collect_org(org, previous=Snapshot(), sem=asyncio.Semaphore(5))
+
+    repo = snap.repos[0]
+    assert sorted(lf.path for lf in repo.lock_files) == ["package-lock.json", "yarn.lock"]
+    assert any("cannot determine latest lockfile" in e for e in repo.errors)
+
+
 def test_rebuild_vuln_index_skips_already_fixed_versions():
     from app.db import connect, init_schema
     from app.schemas import ProxyHealthResponse, ProxyHealthVulnerability
