@@ -78,18 +78,13 @@ jobs:
       - name: Run tests
         run: make test
 
+  # 테스트 통과 후 backend·frontend SBOM을 한 job에서 만들어
+  # Artifact 하나(SBOM-packages-web-<태그|pr-번호>)로 올린다.
   sbom:
-    name: SBOM (${{ matrix.target.name }})
+    name: SBOM
     needs: tester
-    strategy:
-      matrix:
-        target:
-          - path: backend
-            name: packages-web-backend
-          - path: frontend
-            name: packages-web-frontend
     uses: ./.github/workflows/sbom.yml
     with:
-      PROJECT_PATH: ${{ matrix.target.path }}
-      PROJECT_NAME: ${{ matrix.target.name }}
+      PROJECT_NAME: packages-web
       IMAGE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || format('pr-{0}', github.event.pull_request.number) }}
+      TARGETS: backend frontend

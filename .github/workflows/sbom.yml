@@ -1,17 +1,24 @@
 name: Generate Project SBOM
 
+# 재사용 워크플로: 한 job 안에서 TARGETS의 각 폴더 SBOM을 만들어
+# sbom-final/<폴더>/ 에 모으고, 사용자용 Artifact 하나만 업로드한다.
+# (matrix/임시 Artifact를 쓰지 않으므로 GHES v3 Artifact 삭제 제약과 무관)
+
 on:
   workflow_call:
     inputs:
-      PROJECT_PATH:
-        required: true
-        type: string
-
       PROJECT_NAME:
+        description: "Artifact 이름에 쓰는 프로젝트 이름 (예: packages-web)"
         required: true
         type: string
 
       IMAGE_TAG:
+        description: "태그 이름 또는 pr-<번호>"
+        required: true
+        type: string
+
+      TARGETS:
+        description: "SBOM을 만들 폴더 목록, 공백 구분 (예: backend frontend)"
         required: true
         type: string
 
@@ -24,77 +31,89 @@ jobs:
     runs-on: [self-hosted]
     container: nexus.sk-inc.com:8081/cr/cloud-ops-builder:v1.0.4
 
-    defaults:
-      run:
-        working-directory: ${{ inputs.PROJECT_PATH }}
-
     env:
       PROJECT_NAME: ${{ inputs.PROJECT_NAME }}
       IMAGE_TAG: ${{ inputs.IMAGE_TAG }}
-      SBOM_PREFIX: ${{ inputs.PROJECT_NAME }}-${{ inputs.IMAGE_TAG }}
+      TARGETS: ${{ inputs.TARGETS }}
+      SBOM_DIR: sbom-final
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
 
-      - name: Prepare SBOM directory
+      # ------------------------------------------------------
+      # 폴더별 SBOM 생성
+      # uv.lock      -> <이름>-<태그>-pypi-sbom.json (운영 의존성만)
+      # package-lock -> <이름>-<태그>-npm-sbom.json  (운영 의존성만)
+      # ------------------------------------------------------
+
+      - name: Generate SBOM per target
         run: |
-          rm -rf sbom
-          mkdir -p sbom
+          set -eu
+          rm -rf "$SBOM_DIR"
 
-      # ------------------------------------------------------
-      # PyPI
-      # uv.lock이 있는 경우 (운영 의존성만)
-      # ------------------------------------------------------
+          for target in $TARGETS; do
+            echo "::group::SBOM $target"
+            out="$GITHUB_WORKSPACE/$SBOM_DIR/$target"
+            name="$PROJECT_NAME-$target"
+            prefix="$name-$IMAGE_TAG"
+            mkdir -p "$out"
+            generated=0
 
-      - name: Generate PyPI SBOM
-        if: hashFiles(format('{0}/uv.lock', inputs.PROJECT_PATH)) != ''
-        run: |
-          uv export \
-            --frozen \
-            --no-dev \
-            --preview-features sbom-export \
-            --format cyclonedx1.5 \
-            --output-file "sbom/${SBOM_PREFIX}-pypi-sbom.json"
+            if [ -f "$target/uv.lock" ]; then
+              (
+                cd "$target"
+                uv export \
+                  --frozen \
+                  --no-dev \
+                  --preview-features sbom-export \
+                  --format cyclonedx1.5 \
+                  --output-file "$out/$prefix-pypi-sbom.json"
+              )
+              generated=1
+            fi
 
-      # ------------------------------------------------------
-      # npm
-      # package-lock.json이 있는 경우 (운영 의존성만)
-      # ------------------------------------------------------
+            if [ -f "$target/package-lock.json" ]; then
+              (
+                cd "$target"
+                npm sbom \
+                  --package-lock-only \
+                  --omit dev \
+                  --sbom-format cyclonedx \
+                  --sbom-type application \
+                  > "$out/$prefix-npm-sbom.json"
+              )
+              generated=1
+            fi
 
-      - name: Generate npm SBOM
-        if: hashFiles(format('{0}/package-lock.json', inputs.PROJECT_PATH)) != ''
-        run: |
-          npm sbom \
-            --package-lock-only \
-            --omit dev \
-            --sbom-format cyclonedx \
-            --sbom-type application \
-            > "sbom/${SBOM_PREFIX}-npm-sbom.json"
+            if [ "$generated" -eq 0 ]; then
+              echo "::error::$target 에 uv.lock / package-lock.json 이 없습니다."
+              exit 1
+            fi
 
-      # ------------------------------------------------------
-      # 생성정보
-      # ------------------------------------------------------
-
-      - name: Create manifest
-        run: |
-          cat > sbom/manifest.txt <<EOF
-          Project     : ${PROJECT_NAME}
-          Image Tag   : ${IMAGE_TAG}
-          Repository  : ${GITHUB_REPOSITORY}
-          Branch/Tag  : ${GITHUB_REF_NAME}
-          Commit      : ${GITHUB_SHA}
-          Run ID      : ${GITHUB_RUN_ID}
+            cat > "$out/manifest.txt" <<EOF
+          Project     : $name
+          Image Tag   : $IMAGE_TAG
+          Repository  : $GITHUB_REPOSITORY
+          Branch/Tag  : $GITHUB_REF_NAME
+          Commit      : $GITHUB_SHA
+          Run ID      : $GITHUB_RUN_ID
           Generated   : $(date -u '+%Y-%m-%dT%H:%M:%SZ')
           EOF
+            echo "::endgroup::"
+          done
 
+      # 실패해도 어디까지 만들어졌는지 보이도록 항상 출력
       - name: Show generated SBOM
+        if: always()
         run: |
-          echo "===== SBOM Files ====="
-          ls -lh sbom/
+          echo "===== $SBOM_DIR tree ====="
+          find "$SBOM_DIR" -print 2>/dev/null | sort || echo "(no $SBOM_DIR)"
+          echo "===== files ====="
+          find "$SBOM_DIR" -type f -exec ls -lh {} + 2>/dev/null || true
 
       # ------------------------------------------------------
-      # 사용자가 GitHub Actions 화면에서 다운로드
+      # 사용자가 GitHub Actions 화면에서 다운로드 (Artifact 1개)
       # ------------------------------------------------------
 
       - name: Upload SBOM Artifact
@@ -102,5 +121,6 @@ jobs:
         uses: actions/upload-artifact@v3.2.2
         with:
           name: SBOM-${{ inputs.PROJECT_NAME }}-${{ inputs.IMAGE_TAG }}
-          path: ${{ inputs.PROJECT_PATH }}/sbom/
+          path: sbom-final/
+          if-no-files-found: error
           retention-days: 90
