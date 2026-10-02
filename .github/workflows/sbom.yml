@@ -91,15 +91,15 @@ jobs:
               exit 1
             fi
 
-            cat > "$out/manifest.txt" <<EOF
-          Project     : $name
-          Image Tag   : $IMAGE_TAG
-          Repository  : $GITHUB_REPOSITORY
-          Branch/Tag  : $GITHUB_REF_NAME
-          Commit      : $GITHUB_SHA
-          Run ID      : $GITHUB_RUN_ID
-          Generated   : $(date -u '+%Y-%m-%dT%H:%M:%SZ')
-          EOF
+            printf '%s\n' \
+              "Project     : $name" \
+              "Image Tag   : $IMAGE_TAG" \
+              "Repository  : $GITHUB_REPOSITORY" \
+              "Branch/Tag  : $GITHUB_REF_NAME" \
+              "Commit      : $GITHUB_SHA" \
+              "Run ID      : $GITHUB_RUN_ID" \
+              "Generated   : $(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+              > "$out/manifest.txt"
             echo "::endgroup::"
           done
 
@@ -123,4 +123,4 @@ jobs:
           name: SBOM-${{ inputs.PROJECT_NAME }}-${{ inputs.IMAGE_TAG }}
           path: sbom-final/
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 30
